@@ -29,9 +29,9 @@ class Model(torch.nn.Module):
 
         # Linear layer
         self.stance_linear = nn.Linear(in_features=config.hidden_dim*4,
-                                       out_features=config.output_dim)
+                                       out_features=config.stance_output_dim)
         self.nli_linear = nn.Linear(in_features=config.hidden_dim*4,
-                                    out_features=config.output_dim)
+                                    out_features=config.nli_output_dim)
 
     def foward(self, task_num, batch_x1, batch_x2):
         # Embedding

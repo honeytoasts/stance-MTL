@@ -1,12 +1,14 @@
 # built-in module
 import re
+import os
+import pickle
 
 class Tokenizer:
     def __init__(self):
         # padding token
         self.pad_token = '[pad]'
         self.pad_token_id = 0
-        
+
         # begin of sentence token
         self.bos_token = '[bos]'
         self.bos_token_id = 1
@@ -58,7 +60,7 @@ class Tokenizer:
 
     def build_dict(self, sentences, word_dict):
         sentences = self.tokenize(sentences)
-        
+
         for token in self.get_all_tokens(sentences):
             if token not in self.token_to_id and token in word_dict:
                 self.token_to_id[token] = word_dict[token]
@@ -109,3 +111,24 @@ class Tokenizer:
                      for sentence in sentences]
 
         return sentences
+
+    def load_from_file(self, file_path=None):
+        if file_path is None or type(file_path) != str:
+            raise ValueError('argument `file_path` should be a string')
+        elif not os.path.exists(file_path):
+            raise FileNotFoundError('file {} does not exist'.format(file_path))
+
+        with open(file_path, 'rb') as f:
+            self.token_to_id = pickle.load(f)
+        self.id_to_token = {v:i for i, v in self.token_to_id.items()}
+
+        return self
+
+    def save_to_file(self, file_path=None):
+        if file_path is None or type(file_path) != str:
+            raise ValueError('argument `file_path` should be a string')
+        else:
+            with open(file_path, 'wb') as f:
+                pickle.dump(self.token_to_id, f)
+
+        return self
