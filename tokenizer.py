@@ -3,6 +3,9 @@ import re
 import os
 import pickle
 
+# 3rd-party module
+from tqdm import tqdm
+
 class Tokenizer:
     def __init__(self):
         # padding token
@@ -27,6 +30,7 @@ class Tokenizer:
 
         self.token_to_id = {}
         self.id_to_token = {}
+        self.all_tokens = []
 
         self.token_to_id[self.pad_token] = self.pad_token_id
         self.token_to_id[self.bos_token] = self.bos_token_id
@@ -44,12 +48,12 @@ class Tokenizer:
         sentences = self.tokenize(sentences)
         tokens = []
 
-        for sentence in sentences:
+        for sentence in tqdm(sentences, desc='get all tokens'):
             for token in sentence:
-                if token not in tokens:
-                    tokens.append(token)
+                tokens.append(token)
 
-        return tokens
+        tokens = list(set(tokens))
+        self.all_tokens = tokens
 
     def tokenize(self, sentences):
         # space tokenize
@@ -61,7 +65,7 @@ class Tokenizer:
     def build_dict(self, sentences, word_dict):
         sentences = self.tokenize(sentences)
 
-        for token in self.get_all_tokens(sentences):
+        for token in self.all_tokens:
             if token not in self.token_to_id and token in word_dict:
                 self.token_to_id[token] = word_dict[token]
                 self.id_to_token[word_dict[token]] = token
@@ -107,8 +111,8 @@ class Tokenizer:
 
     def decode(self, sentences):
         sentences = self.detokenize(self.convert_ids_to_tokens(sentences))
-        sentences = [re.sub(r'[bos]|[sep]|[eos]|[pad]', '', sentence)
-                     for sentence in sentences]
+        # sentences = [re.sub(r'[bos]|[sep]|[eos]|[pad]', '', sentence)
+        #              for sentence in sentences]
 
         return sentences
 
@@ -132,3 +136,19 @@ class Tokenizer:
                 pickle.dump(self.token_to_id, f)
 
         return self
+
+    def encode_to_lexicon(self, sentences, lexicons):
+        sentences = self.tokenize(sentences)
+        lexicons = {lexicon: 1 for lexicon in lexicons}
+        lexicon_vectors = []
+
+        for sentence in sentences:
+            lexicon_vector = [lexicons.get(token, 0) for token in sentence]
+
+            # bos and eos token have no lexicon
+            lexicon_vector.insert(0, 0)
+            lexicon_vector.append(0)
+
+            lexicon_vectors.append(lexicon_vector)
+
+        return lexicon_vectors

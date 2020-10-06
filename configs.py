@@ -20,6 +20,9 @@ class Config:
         self.nli_output_dim = kwargs.pop('nli_output_dim', 1)
         self.num_rnn_layers = kwargs.pop('num_rnn_layers', 1)
         self.num_linear_layers = kwargs.pop('num_linear_layers', 1)
+        self.attention = kwargs.pop('attention', 'dot')
+        self.clip_grad_value = kwargs.pop('clip_grad_value', 1)
+        self.lexicon_loss_weight = kwargs.pop('lexicon_loss_weight', 0.025)
 
     def load_from_file(self, file_path=None):
         if file_path is None or type(file_path) != str:
@@ -30,22 +33,42 @@ class Config:
         with open(file_path, 'rb') as f:
             hyperparameters = pickle.load(f)
 
-            self.stance_dataset = hyperparameters.pop('stance_dataset', self.stance_dataset)
-            self.embedding_file = hyperparameters.pop('embedding_file', self.embedding_file)
+            self.stance_dataset = \
+                hyperparameters.pop('stance_dataset', self.stance_dataset)
+            self.embedding_file = \
+                hyperparameters.pop('embedding_file', self.embedding_file)
 
-            self.random_seed = hyperparameters.pop('random_seed', self.random_seed)
-            self.epoch = hyperparameters.pop('epoch', self.epoch)
-            self.batch_size = hyperparameters.pop('batch_size', self.batch_size)
-            self.learning_rate = hyperparameters.pop('learning_rate', self.learning_rate)
-            self.kfold = hyperparameters.pop('kfold', self.kfold)
+            self.random_seed = \
+                hyperparameters.pop('random_seed', self.random_seed)
+            self.epoch = \
+                hyperparameters.pop('epoch', self.epoch)
+            self.batch_size = \
+                hyperparameters.pop('batch_size', self.batch_size)
+            self.learning_rate = \
+                hyperparameters.pop('learning_rate', self.learning_rate)
+            self.kfold = \
+                hyperparameters.pop('kfold', self.kfold)
 
-            self.dropout = hyperparameters.pop('dropout', self.dropout)
-            self.embedding_dim = hyperparameters.pop('embedding_dim', self.embedding_dim)
-            self.hidden_dim = hyperparameters.pop('hidden_dim', self.hidden_dim)
-            self.stance_output_dim = hyperparameters.pop('stance_output_dim', self.stance_output_dim)
-            self.nli_output_dim = hyperparameters.pop('nli_output_dim', self.nli_output_dim)
-            self.num_rnn_layers = hyperparameters.pop('num_rnn_layers', self.num_rnn_layers)
-            self.num_linear_layers = hyperparameters.pop('num_linear_layers', self.num_linear_layers)
+            self.dropout = \
+                hyperparameters.pop('dropout', self.dropout)
+            self.embedding_dim = \
+                hyperparameters.pop('embedding_dim', self.embedding_dim)
+            self.hidden_dim = \
+                hyperparameters.pop('hidden_dim', self.hidden_dim)
+            self.stance_output_dim = \
+                hyperparameters.pop('stance_output_dim', self.stance_output_dim)
+            self.nli_output_dim = \
+                hyperparameters.pop('nli_output_dim', self.nli_output_dim)
+            self.num_rnn_layers = \
+                hyperparameters.pop('num_rnn_layers', self.num_rnn_layers)
+            self.num_linear_layers = \
+                hyperparameters.pop('num_linear_layers', self.num_linear_layers)
+            self.attention = \
+                hyperparameters.pop('attention', self.attention)
+            self.clip_grad_value = \
+                hyperparameters.pop('clip_grad_value', self.clip_grad_value)
+            self.lexicon_loss_weight = \
+                hyperparameters.pop('lexicon_loss_weight', self.lexicon_loss_weight)
 
         return self
 
@@ -69,6 +92,9 @@ class Config:
                     'nli_output_dim': self.nli_output_dim,
                     'num_rnn_layers': self.num_rnn_layers,
                     'num_linear_layers': self.num_linear_layers,
+                    'attention': self.attention,
+                    'clip_grad_value': self.clip_grad_value,
+                    'lexicon_loss_weight': self.lexicon_loss_weight
                 }
 
                 pickle.dump(hyperparameters, f)

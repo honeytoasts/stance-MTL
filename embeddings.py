@@ -4,9 +4,7 @@ import pickle
 
 # 3rd-party module
 import torch
-
-# self-made module
-import tokenizers
+from tqdm import tqdm
 
 class Embedding:
     def __init__(self, embedding_dim, random_seed=7):
@@ -32,8 +30,6 @@ class Embedding:
         return self.vector.shape[0]
 
     def add_embedding(self, token, vector=None):
-        torch.manual_seed(self.random_seed)
-
         if vector is not None:
             vector = vector.unsqueeze(0)
         else:
@@ -47,14 +43,18 @@ class Embedding:
         tokens = set(tokens)
         vectors = []
 
+        # get number of rows in file
+        with open(embedding_path) as f:
+            file_len = len(f.readlines())
+
         with open(embedding_path) as f:
             firstrow = f.readline()
-            # if first row not the header
+
+            # if first row not the header, seek to 0
             if len(firstrow.strip().split()) >= self.embedding_dim:
-                # seek to 0
                 f.seek(0)
 
-            for row in f:
+            for row in tqdm(f, desc='load embedding', total=file_len):
                 # get token and embedding
                 row = row.strip().split()
                 token = row[0]
