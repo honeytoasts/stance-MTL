@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import KFold
+from sklearn.metrics import f1_score
 from tqdm import tqdm
 import tensorboard
 import sklearn
@@ -23,24 +24,24 @@ import models
 import loss
 
 # hyperparameter setting
-experiment_no = 1
-config = configs.Config(stance_dataset='semeval2016',
+experiment_no = 2
+config = configs.Config(stance_dataset='fnc-1',
                         embedding_file='glove/glove.twitter.27B.100d.txt',
                         random_seed=7,
                         epoch=30,
-                        batch_size=64,
-                        learning_rate=1e-3,
+                        batch_size=32,
+                        learning_rate=1e-5,
                         kfold=5,
                         dropout=0.2,
                         embedding_dim=100,
                         hidden_dim=100,
-                        stance_output_dim=3,  # 3 for SemEval, 4 for FNC-1
+                        stance_output_dim=4,  # 3 for SemEval, 4 for FNC-1
                         nli_output_dim=3,
                         num_rnn_layers=1,
                         num_linear_layers=1,
                         attention='dot',
                         clip_grad_value=0,
-                        lexicon_loss_weight=0.025)
+                        lexicon_loss_weight=0)
 
 # deinfe save path
 save_path = f'model/{experiment_no}'
@@ -157,9 +158,15 @@ def evaluate(model, batch_iterator, phase='train'):
             all_label_y.extend(y.tolist())
             all_pred_y.extend(torch.argmax(pred_y, axis=1).cpu().tolist())
 
-    # evaluate loss and f1
+    # evaluate loss
     total_loss = total_loss / len(batch_iterator)
-    f1 = sklearn.metrics.f1_score(all_label_y, all_pred_y, average='macro')
+
+    # evaluate f1
+    if config.stance_dataset == 'semeval2016':  
+        # semeval2016 benchmark just consider f1 score for "favor (0)" and "against (1)" label
+        f1 = f1_score(all_label_y, all_pred_y, average='macro', labels=[0, 1])
+    else:
+        f1 = f1_score(all_label_y, all_pred_y, average='macro')
 
     if phase == 'train':
         return total_loss

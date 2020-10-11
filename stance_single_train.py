@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.model_selection import KFold
+from sklearn.metrics import f1_score
 from tqdm import tqdm
 import tensorboard
 import sklearn
@@ -143,9 +144,15 @@ def evaluate(model, batch_iterator, phase='train'):
             all_label_y.extend(y.tolist())
             all_pred_y.extend(torch.argmax(pred_y, axis=1).cpu().tolist())
 
-    # evaluate loss and f1
+    # evaluate loss
     total_loss = total_loss / len(batch_iterator)
-    f1 = sklearn.metrics.f1_score(all_label_y, all_pred_y, average='macro')
+
+    # evaluate f1
+    if config.stance_dataset == 'semeval2016':  
+        # semeval2016 benchmark just consider f1 score for "favor (0)" and "against (1)" label
+        f1 = f1_score(all_label_y, all_pred_y, average='macro', labels=[0, 1])
+    else:
+        f1 = f1_score(all_label_y, all_pred_y, average='macro')
 
     return total_loss, f1
 
