@@ -50,7 +50,7 @@ def load_dataset_semeval2016(split='train'):
             data.append([target.strip(), claim.strip(), stance.strip()])
 
     # preprocessing
-    pattern = r"#SemST|@[a-zA-Z]+|[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ',.]|RT"
+    pattern = r"#SemST|@[a-zA-Z]+|[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ']|RT"
     data = preprocessing(pattern, data)
 
     # convert to dataframe
@@ -81,7 +81,7 @@ def load_dataset_fnc(split='train'):
                      row['Stance'].strip()])
 
     # preprocessing
-    pattern = r"[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ',.]"
+    pattern = r"[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ']"
     data = preprocessing(pattern, data)
 
     # convert to dataframe
@@ -107,7 +107,7 @@ def load_dataset_mnli(split='train'):
             data.append([row[5], row[6], row[0]])
 
     # preprocessing
-    pattern = r"[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ',.]"
+    pattern = r"[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ']"
     data = preprocessing(pattern, data)
 
     # convert to dataframe
