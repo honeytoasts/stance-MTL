@@ -286,7 +286,8 @@ for fold, (train_index, valid_index) in enumerate(data_kf, start=1):
     all_valid_f1.append(fold_valid_f1)
 
 # print final result
-print(f'\n{best_fold}-fold epoch {best_epoch} - best train loss: {best_train_loss}, '
+print(f'\n{best_fold}-fold epoch {best_epoch}\n'
+      f'best train loss: {best_train_loss}, best train f1: {best_train_f1}\n'
       f'best valid loss: {best_valid_loss}, best valid f1: {best_valid_f1}')
 
 # init tensorboard
