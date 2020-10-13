@@ -7,7 +7,7 @@ import torch
 from tqdm import tqdm
 
 class Embedding:
-    def __init__(self, embedding_dim, random_seed=7):
+    def __init__(self, embedding_dim=100, random_seed=7):
         self.embedding_dim = embedding_dim
         self.word_dict = {}
         self.vector = torch.Tensor()
@@ -72,11 +72,11 @@ class Embedding:
             raise ValueError('argument `file_path` should be a string')
         else:
             with open(file_path, 'rb') as f:
-                tokenizer = pickle.load(f)
-                self.embedding_dim = tokenizer.embedding_dim
-                self.word_dict = tokenizer.word_dict
-                self.vector = tokenizer.vector
-                self.random_seed = tokenizer.random_seed
+                embedding = pickle.load(f)
+                self.embedding_dim = embedding.embedding_dim
+                self.word_dict = embedding.word_dict
+                self.vector = embedding.vector
+                self.random_seed = embedding.random_seed
 
     def save_to_file(self, file_path=None):
         if file_path is None or type(file_path) != str:
