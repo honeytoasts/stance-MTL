@@ -1,6 +1,6 @@
 data/
 model*/
-tensorboard/
+tensorboard*/
 .vscode/
 
 # Byte-compiled / optimized / DLL files

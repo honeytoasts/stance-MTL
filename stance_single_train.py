@@ -26,14 +26,14 @@ import loss_single as loss
 # hyperparameter setting
 experiment_no = 1
 config = configs.Config(stance_dataset='semeval2016',
-                        embedding_file='glove/glove.twitter.27B.100d.txt',
+                        embedding_file='glove/glove.twitter.27B.200d.txt',
                         random_seed=7,
-                        epoch=30,
+                        epoch=50,
                         batch_size=32,
                         learning_rate=1e-4,
                         kfold=5,
                         dropout=0.2,
-                        embedding_dim=100,
+                        embedding_dim=200,
                         hidden_dim=100,
                         stance_output_dim=3,  # 3 for SemEval, 4 for FNC-1
                         num_rnn_layers=1,
@@ -253,11 +253,11 @@ for fold, (train_index, valid_index) in enumerate(data_kf, start=1):
         # evaluate model
         train_iterator = tqdm(train_dataloader, total=len(train_dataloader),
                               desc='evaluate train set', position=0)
+        train_loss, train_f1 = evaluate(model, train_iterator, 'train')
+
         valid_iterator = tqdm(valid_dataloader,
                               total=len(valid_dataloader),
                               desc='evaluate valid set', position=0)
-
-        train_loss, train_f1 = evaluate(model, train_iterator, 'train')
         valid_loss, valid_f1 = evaluate(model, valid_iterator, 'test')
 
         print(f'train loss: {train_loss}, train f1: {train_f1}, '
@@ -286,7 +286,7 @@ for fold, (train_index, valid_index) in enumerate(data_kf, start=1):
     all_valid_f1.append(fold_valid_f1)
 
 # print final result
-print(f'\n{best_fold}-fold epoch {best_epoch}\n'
+print(f'\nexperiment {experiment_no}: {best_fold}-fold epoch {best_epoch}\n'
       f'best train loss: {best_train_loss}, best train f1: {best_train_f1}\n'
       f'best valid loss: {best_valid_loss}, best valid f1: {best_valid_f1}')
 

@@ -24,18 +24,18 @@ import models
 import loss
 
 # hyperparameter setting
-experiment_no = 2
-config = configs.Config(stance_dataset='fnc-1',
-                        embedding_file='glove/glove.twitter.27B.100d.txt',
+experiment_no = 1
+config = configs.Config(stance_dataset='semeval2016',
+                        embedding_file='glove/glove.twitter.27B.200d.txt',
                         random_seed=7,
-                        epoch=30,
+                        epoch=50,
                         batch_size=32,
-                        learning_rate=1e-5,
+                        learning_rate=1e-4,
                         kfold=5,
                         dropout=0.2,
-                        embedding_dim=100,
+                        embedding_dim=200,
                         hidden_dim=100,
-                        stance_output_dim=4,  # 3 for SemEval, 4 for FNC-1
+                        stance_output_dim=3,  # 3 for SemEval, 4 for FNC-1
                         nli_output_dim=3,
                         num_rnn_layers=1,
                         num_linear_layers=1,
@@ -136,7 +136,9 @@ embedding.save_to_file(embedding_path)
 
 # define evaluate function
 def evaluate(model, batch_iterator, phase='train'):
-    total_loss = 0.0
+    total_loss, total_lexicon_loss = 0.0, 0.0
+    stance_loss, stance_lexicon_loss = 0.0, 0.0
+    stance_batch_count = 0
     all_label_y, all_pred_y = [], []
 
     model.eval()
@@ -148,18 +150,28 @@ def evaluate(model, batch_iterator, phase='train'):
             pred_y, attn_weight = model(task_id, x1, x2)
 
             # evaluate loss
-            batch_loss = loss.loss_function(lexicon_vector=lexicon,
-                                            tokenizer=tokenizer, predict=pred_y,
-                                            target=y, attn_weight=attn_weight,
-                                            beta=config.lexicon_loss_weight,
-                                            device=device)
+            batch_loss, batch_lexicon_loss = \
+                loss.loss_function(lexicon_vector=lexicon,
+                                   tokenizer=tokenizer, predict=pred_y,
+                                   target=y, attn_weight=attn_weight,
+                                   beta=config.lexicon_loss_weight,
+                                   device=device)
             total_loss += batch_loss
+            total_lexicon_loss += batch_lexicon_loss
 
-            all_label_y.extend(y.tolist())
-            all_pred_y.extend(torch.argmax(pred_y, axis=1).cpu().tolist())
+            if task_id == 0:  # stance detection
+                stance_loss += batch_loss
+                stance_lexicon_loss += batch_lexicon_loss
+                stance_batch_count += 1
+
+                all_label_y.extend(y.tolist())
+                all_pred_y.extend(torch.argmax(pred_y, axis=1).cpu().tolist())
 
     # evaluate loss
     total_loss = total_loss / len(batch_iterator)
+    total_lexicon_loss = total_lexicon_loss / len(batch_iterator)
+    stance_loss = stance_loss / stance_batch_count
+    stance_lexicon_loss = stance_lexicon_loss / stance_batch_count
 
     # evaluate f1
     if config.stance_dataset == 'semeval2016':  
@@ -168,16 +180,19 @@ def evaluate(model, batch_iterator, phase='train'):
     else:
         f1 = f1_score(all_label_y, all_pred_y, average='macro')
 
-    if phase == 'train':
-        return total_loss
-    else:
-        return total_loss, f1
+    return (total_loss, total_lexicon_loss,
+            stance_loss, stance_lexicon_loss,
+            f1)
 
 # initialize loss and f1
-all_train_loss = []
-all_stance_loss, all_nli_loss = [], []
-all_stance_f1, all_nli_f1 = [], []
-best_train_loss, best_stance_loss, best_stance_f1 = None, None, None
+all_train_total_loss, all_train_total_lexicon_loss = [], []
+all_train_stance_loss, all_train_stance_lexicon_loss = [], []
+all_valid_stance_loss, all_valid_stance_lexicon_loss = [], []
+all_train_stance_f1, all_valid_stance_f1 = [], []
+
+best_train_total_loss, best_train_stance_loss = None, None
+best_valid_stance_loss = None
+best_train_stance_f1, best_valid_stance_f1 = None, None
 best_fold, best_epoch = None, None
 
 # define KFold
@@ -258,18 +273,20 @@ for fold, ((stance_train_index, stance_valid_index), \
                                  lr=config.learning_rate)
 
     # initialize loss and f1
-    fold_train_loss = []
-    fold_stance_loss, fold_nli_loss = [], []
-    fold_stance_f1, fold_nli_f1 = [], []
+
+    fold_train_total_loss, fold_train_total_lexicon_loss = [], []
+    fold_train_stance_loss, fold_train_stance_lexicon_loss = [], []
+    fold_valid_stance_loss, fold_valid_stance_lexicon_loss = [], []
+    fold_train_stance_f1, fold_valid_stance_f1 = [], []
 
     # train model
     model.zero_grad()
 
     for epoch in range(int(config.epoch)):
         model.train()
-        print(f'{fold}-fold\n')
+        print(f'\n{fold}-fold\n')
         train_iterator = tqdm(train_dataloader, total=len(train_dataloader),
-                              desc=f'epoch {epoch}, loss: {0:.3f}', position=0)
+                              desc=f'epoch {epoch}', position=0)
 
         for task_id, train_x1, train_x2, \
             train_lexicon, train_y in train_iterator:
@@ -282,7 +299,7 @@ for fold, ((stance_train_index, stance_valid_index), \
             optimizer.zero_grad()
 
             # calculate loss
-            batch_loss = loss.loss_function(lexicon_vector=train_lexicon,
+            batch_loss, _ = loss.loss_function(lexicon_vector=train_lexicon,
                                             tokenizer=tokenizer, predict=pred_y,
                                             target=train_y, attn_weight=attn_weight,
                                             beta=config.lexicon_loss_weight,
@@ -299,82 +316,113 @@ for fold, ((stance_train_index, stance_valid_index), \
             # gradient decent
             optimizer.step()
 
-            # update description
-            train_iterator.set_description(f'epoch {epoch}, loss: {batch_loss:.3f}')
-
         # evaluate model
         train_iterator = tqdm(train_dataloader, total=len(train_dataloader),
                               desc='evaluate training', position=0)
+        (train_total_loss, train_total_lexicon_loss,
+         train_stance_loss, train_stance_lexicon_loss, train_stance_f1) = \
+            evaluate(model, train_iterator, 'train')
+
         stance_iterator = tqdm(stance_valid_dataloader,
                                total=len(stance_valid_dataloader),
                                desc='evaluate valid for stance', position=0)
-        # nli_iterator = tqdm(nli_valid_dataloader,
-        #                     total=len(nli_valid_dataloader),
-        #                     desc='evaluate valid for nli', position=0)
+        valid_stance_loss, valid_stance_lexicon_loss, _, _,  valid_stance_f1= \
+            evaluate(model, stance_iterator, 'test')
 
-        train_loss = evaluate(model, train_iterator, 'train')
-        stance_loss, stance_f1 = evaluate(model, stance_iterator, 'test')
-        # nli_loss, nli_f1 = evaluate(model, nli_iterator, 'test')
-
-        print(f'train loss: {train_loss}, '
-              f'stance loss: {stance_loss}, stance f1: {stance_f1}\n')
+        print(f'train total loss : {round(train_total_loss.item(), 5)}, '
+              f'train total lexicon loss : {round(train_total_lexicon_loss.item(), 5)}\n'
+              f'train stance loss: {round(train_stance_loss.item(), 5)}, '
+              f'train stance lexicon loss: {round(train_stance_lexicon_loss.item(), 5)}\n'
+              f'valid stance loss: {round(valid_stance_loss.item(), 5)}, '
+              f'valid stance lexicon loss: {round(valid_stance_lexicon_loss.item(), 5)}\n'
+              f'train stance f1: {round(train_stance_f1.item(), 5)}, '
+              f'valid stance f1: {round(valid_stance_f1.item(), 5)}')
 
         # save model
-        if best_stance_loss is None or stance_loss < best_stance_loss:
+        if (best_valid_stance_loss is None) or \
+           (valid_stance_loss < best_valid_stance_loss):
             # check model save path
             if not os.path.exists(f'{save_path}/{fold}-fold'):
                 os.makedirs(f'{save_path}/{fold}-fold')
             torch.save(model.state_dict(),
                        f'{save_path}/{fold}-fold/model_{epoch}.ckpt')
 
-            best_train_loss = train_loss
-            best_stance_loss, best_stance_f1 = stance_loss, stance_f1
+            best_train_total_loss = train_total_loss
+            best_train_stance_loss = train_stance_loss
+            best_valid_stance_loss = valid_stance_loss
+            best_train_stance_f1 = train_stance_f1
+            best_valid_stance_f1 = valid_stance_f1
             best_fold, best_epoch = fold, epoch
 
-        fold_train_loss.append(train_loss.item())
-        fold_stance_loss.append(stance_loss.item())
-        fold_stance_f1.append(stance_f1.item())
-        # fold_nli_loss.append(nli_loss)
-        # fold_nli_f1.append(nli_f1)
+        # record all the loss and f1
+        fold_train_total_loss.append(train_total_loss.item())
+        fold_train_total_lexicon_loss.append(train_total_lexicon_loss.item())
+        fold_train_stance_loss.append(train_stance_loss.item())
+        fold_train_stance_lexicon_loss.append(train_stance_lexicon_loss.item())
+        fold_valid_stance_loss.append(valid_stance_loss.item())
+        fold_valid_stance_lexicon_loss.append(valid_stance_lexicon_loss.item())
+        fold_train_stance_f1.append(train_stance_f1.item())
+        fold_valid_stance_f1.append(valid_stance_f1.item())
 
-    all_train_loss.append(fold_train_loss)
-    all_stance_loss.append(fold_stance_loss)
-    all_stance_f1.append(fold_stance_f1)
-    # all_nli_loss.append(fold_nli_loss)
-    # all_nli_f1.append(fold_nli_f1)
+    all_train_total_loss.append(fold_train_total_loss)
+    all_train_total_lexicon_loss.append(fold_train_total_lexicon_loss)
+    all_train_stance_loss.append(fold_train_stance_loss)
+    all_train_stance_lexicon_loss.append(fold_train_stance_lexicon_loss)
+    all_valid_stance_loss.append(fold_valid_stance_loss)
+    all_valid_stance_lexicon_loss.append(fold_valid_stance_lexicon_loss)
+    all_train_stance_f1.append(fold_train_stance_f1)
+    all_valid_stance_f1.append(fold_valid_stance_f1)
 
 # print final result
-print(f'\n{best_fold}-fold epoch {best_epoch} - best train loss: {best_train_loss}, '
-      f'best stance loss: {best_stance_loss}, best stance f1: {best_stance_f1}')
+print(f'\nexperiment {experiment_no}: {best_fold}-fold epoch {best_epoch}\n'
+      f'best train total loss : {best_train_total_loss}\n,'
+      f'best train stance loss: {best_train_stance_loss}, '
+      f'best valid stance loss: {best_valid_stance_loss}\n'
+      f'best train stance f1  : {best_train_stance_f1}, '
+      f'best valid stance f1  : {best_valid_stance_f1}')
 
 # init tensorboard
 writer = SummaryWriter(f'tensorboard/experiment-{experiment_no}')
 
 # write loss and f1 to tensorboard
 for epoch in range(int(config.epoch)):
-    writer.add_scalars(f'Loss/train',
-                       {f'{fold}-fold': round(all_train_loss[fold][epoch], 3)
-                       for fold in range(int(config.kfold))}, epoch)
+    # loss
+    writer.add_scalars(f'Loss/train_total',
+                    {f'{fold}-fold': round(all_train_total_loss[fold][epoch], 5)
+                    for fold in range(int(config.kfold))}, epoch)
+    writer.add_scalars(f'Loss/train_total_lexicon',
+                    {f'{fold}-fold': round(all_train_total_lexicon_loss[fold][epoch], 5)
+                    for fold in range(int(config.kfold))}, epoch)
+    writer.add_scalars(f'Loss/train_stance',
+                    {f'{fold}-fold': round(all_train_stance_loss[fold][epoch], 5)
+                    for fold in range(int(config.kfold))}, epoch)
+    writer.add_scalars(f'Loss/train_stance_lexicon',
+                    {f'{fold}-fold': round(all_train_stance_lexicon_loss[fold][epoch], 5)
+                    for fold in range(int(config.kfold))}, epoch)
     writer.add_scalars(f'Loss/valid_stance',
-                       {f'{fold}-fold': round(all_stance_loss[fold][epoch], 3)
+                    {f'{fold}-fold': round(all_valid_stance_loss[fold][epoch], 5)
+                    for fold in range(int(config.kfold))}, epoch)
+    writer.add_scalars(f'Loss/valid_stance_lexicon',
+                    {f'{fold}-fold': round(all_valid_stance_lexicon_loss[fold][epoch], 5)
+                    for fold in range(int(config.kfold))}, epoch)
+
+    # f1
+    writer.add_scalars(f'F1/train_stance',
+                       {f'{fold}-fold': round(all_train_stance_f1[fold][epoch], 5)
                        for fold in range(int(config.kfold))}, epoch)
     writer.add_scalars(f'F1/valid_stance',
-                       {f'{fold}-fold': round(all_stance_f1[fold][epoch], 3)
+                       {f'{fold}-fold': round(all_valid_stance_f1[fold][epoch], 5)
                        for fold in range(int(config.kfold))}, epoch)
-    # writer.add_scalars(f'Loss/valid_nli',
-    #                    {f'{fold}-fold': round(all_nli_loss[fold][epoch], 3)
-    #                    for fold in range(int(config.kfold))}, epoch)
-    # writer.add_scalars(f'F1/valid_nli',
-    #                    {f'{fold}-fold': all_nli_f1[fold][epoch]
-    #                    for fold in range(int(config.kfold))}, epoch)
 
 # add hyperparameters and final result to tensorboard
 writer.add_hparams({
     'fold': str(best_fold),
     'epoch': str(best_epoch),
-    'train_loss': best_train_loss.item(),
-    'valid_stance_loss': best_stance_loss.item(),
-    'valid_stance_f1': best_stance_f1.item(),
+    'train_total_loss': best_train_total_loss.item(),
+    'train_stance_loss': best_train_stance_loss.item(),
+    'valid_stance_loss': best_valid_stance_loss.item(),
+    'train_stance_f1': best_train_stance_f1.item(),
+    'valid_stance_f1': best_valid_stance_f1.item(),
     'stance_dataset': config.stance_dataset,
     'embedding_file': config.embedding_file,
     'batch_size': str(config.batch_size),
