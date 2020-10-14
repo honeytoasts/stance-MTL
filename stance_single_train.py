@@ -157,11 +157,12 @@ def evaluate(model, batch_iterator, phase='train'):
     return total_loss, f1
 
 # initialize loss and f1
-all_train_loss, all_train_f1 = [], []
-all_valid_loss, all_valid_f1 = [], []
 best_train_loss, best_train_f1 = None, None
 best_valid_loss, best_valid_f1 = None, None
 best_fold, best_epoch = None, None
+
+# initialize tensorboard
+writer = SummaryWriter(f'tensorboard_single/experiment-{experiment_no}')
 
 # define KFold
 kf = KFold(n_splits=config.kfold, random_state=config.random_seed,
@@ -209,10 +210,6 @@ for fold, (train_index, valid_index) in enumerate(data_kf, start=1):
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(),
                                  lr=config.learning_rate)
-
-    # initialize loss and f1
-    fold_train_loss, fold_train_f1 = [], []
-    fold_valid_loss, fold_valid_f1 = [], []
 
     # train model
     model.zero_grad()
@@ -275,38 +272,20 @@ for fold, (train_index, valid_index) in enumerate(data_kf, start=1):
             best_valid_loss, best_valid_f1 = valid_loss, valid_f1
             best_fold, best_epoch = fold, epoch
 
-        fold_train_loss.append(train_loss.item())
-        fold_train_f1.append(train_f1.item())
-        fold_valid_loss.append(valid_loss.item())
-        fold_valid_f1.append(valid_f1.item())
-
-    all_train_loss.append(fold_train_loss)
-    all_train_f1.append(fold_train_f1)
-    all_valid_loss.append(fold_valid_loss)
-    all_valid_f1.append(fold_valid_f1)
+        # write loss and f1 to tensorboard
+        writer.add_scalars('Loss/train',
+                           {f'{fold}-fold': train_loss}, epoch)
+        writer.add_scalars('Loss/valid',
+                           {f'{fold}-fold': valid_loss}, epoch)
+        writer.add_scalars('F1/train',
+                           {f'{fold}-fold': train_f1}, epoch)
+        writer.add_scalars('F1/valid',
+                           {f'{fold}-fold': valid_f1}, epoch)
 
 # print final result
 print(f'\nexperiment {experiment_no}: {best_fold}-fold epoch {best_epoch}\n'
       f'best train loss: {best_train_loss}, best train f1: {best_train_f1}\n'
       f'best valid loss: {best_valid_loss}, best valid f1: {best_valid_f1}')
-
-# init tensorboard
-writer = SummaryWriter(f'tensorboard_single/experiment-{experiment_no}')
-
-# write loss and f1 to tensorboard
-for epoch in range(int(config.epoch)):
-    writer.add_scalars(f'Loss/train',
-                       {f'{fold}-fold': round(all_train_loss[fold][epoch], 5)
-                       for fold in range(int(config.kfold))}, epoch)
-    writer.add_scalars(f'F1/train',
-                       {f'{fold}-fold': round(all_train_f1[fold][epoch], 3)
-                       for fold in range(int(config.kfold))}, epoch)
-    writer.add_scalars(f'Loss/valid',
-                       {f'{fold}-fold': round(all_valid_loss[fold][epoch], 5)
-                       for fold in range(int(config.kfold))}, epoch)
-    writer.add_scalars(f'F1/valid',
-                       {f'{fold}-fold': round(all_valid_f1[fold][epoch], 3)
-                       for fold in range(int(config.kfold))}, epoch)
 
 # add hyperparameters and final result to tensorboard
 writer.add_hparams({

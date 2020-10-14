@@ -24,7 +24,7 @@ import models
 import loss
 
 # hyperparameter setting
-experiment_no = 1
+experiment_no = 4
 config = configs.Config(stance_dataset='semeval2016',
                         embedding_file='glove/glove.twitter.27B.200d.txt',
                         random_seed=7,
@@ -41,7 +41,7 @@ config = configs.Config(stance_dataset='semeval2016',
                         num_linear_layers=1,
                         attention='dot',
                         clip_grad_value=0,
-                        lexicon_loss_weight=0)
+                        lexicon_loss_weight=0.045)
 
 # deinfe save path
 save_path = f'model/{experiment_no}'
@@ -185,15 +185,13 @@ def evaluate(model, batch_iterator, phase='train'):
             f1)
 
 # initialize loss and f1
-all_train_total_loss, all_train_total_lexicon_loss = [], []
-all_train_stance_loss, all_train_stance_lexicon_loss = [], []
-all_valid_stance_loss, all_valid_stance_lexicon_loss = [], []
-all_train_stance_f1, all_valid_stance_f1 = [], []
-
 best_train_total_loss, best_train_stance_loss = None, None
 best_valid_stance_loss = None
 best_train_stance_f1, best_valid_stance_f1 = None, None
 best_fold, best_epoch = None, None
+
+# initialize tensorboard
+writer = SummaryWriter(f'tensorboard/experiment-{experiment_no}')
 
 # define KFold
 kf = KFold(n_splits=config.kfold, random_state=config.random_seed,
@@ -272,13 +270,6 @@ for fold, ((stance_train_index, stance_valid_index), \
     optimizer = torch.optim.Adam(model.parameters(),
                                  lr=config.learning_rate)
 
-    # initialize loss and f1
-
-    fold_train_total_loss, fold_train_total_lexicon_loss = [], []
-    fold_train_stance_loss, fold_train_stance_lexicon_loss = [], []
-    fold_valid_stance_loss, fold_valid_stance_lexicon_loss = [], []
-    fold_train_stance_f1, fold_valid_stance_f1 = [], []
-
     # train model
     model.zero_grad()
 
@@ -354,65 +345,33 @@ for fold, ((stance_train_index, stance_valid_index), \
             best_valid_stance_f1 = valid_stance_f1
             best_fold, best_epoch = fold, epoch
 
-        # record all the loss and f1
-        fold_train_total_loss.append(train_total_loss.item())
-        fold_train_total_lexicon_loss.append(train_total_lexicon_loss.item())
-        fold_train_stance_loss.append(train_stance_loss.item())
-        fold_train_stance_lexicon_loss.append(train_stance_lexicon_loss.item())
-        fold_valid_stance_loss.append(valid_stance_loss.item())
-        fold_valid_stance_lexicon_loss.append(valid_stance_lexicon_loss.item())
-        fold_train_stance_f1.append(train_stance_f1.item())
-        fold_valid_stance_f1.append(valid_stance_f1.item())
+        # write loss to tensorboard
+        writer.add_scalars('Loss/train_total', 
+                           {f'{fold}-fold': train_total_loss}, epoch)
+        writer.add_scalars('Loss/train_total_lexicon',
+                           {f'{fold}-fold': train_total_lexicon_loss}, epoch)
+        writer.add_scalars('Loss/train_stance',
+                           {f'{fold}-fold': train_stance_loss}, epoch)
+        writer.add_scalars('Loss/train_stance_lexicon',
+                           {f'{fold}-fold': train_stance_lexicon_loss}, epoch)
+        writer.add_scalars('Loss/valid_stance',
+                           {f'{fold}-fold': valid_stance_loss}, epoch)
+        writer.add_scalars('Loss/valid_stance_lexicon',
+                           {f'{fold}-fold': valid_stance_lexicon_loss}, epoch)
 
-    all_train_total_loss.append(fold_train_total_loss)
-    all_train_total_lexicon_loss.append(fold_train_total_lexicon_loss)
-    all_train_stance_loss.append(fold_train_stance_loss)
-    all_train_stance_lexicon_loss.append(fold_train_stance_lexicon_loss)
-    all_valid_stance_loss.append(fold_valid_stance_loss)
-    all_valid_stance_lexicon_loss.append(fold_valid_stance_lexicon_loss)
-    all_train_stance_f1.append(fold_train_stance_f1)
-    all_valid_stance_f1.append(fold_valid_stance_f1)
+        # write f1 to tensorboard
+        writer.add_scalars('F1/train_stance',
+                           {f'{fold}-fold': train_stance_f1}, epoch)
+        writer.add_scalars('F1/valid_stance',
+                           {f'{fold}-fold': valid_stance_f1}, epoch)
 
 # print final result
 print(f'\nexperiment {experiment_no}: {best_fold}-fold epoch {best_epoch}\n'
-      f'best train total loss : {best_train_total_loss}\n,'
+      f'best train total loss : {best_train_total_loss}\n'
       f'best train stance loss: {best_train_stance_loss}, '
       f'best valid stance loss: {best_valid_stance_loss}\n'
       f'best train stance f1  : {best_train_stance_f1}, '
       f'best valid stance f1  : {best_valid_stance_f1}')
-
-# init tensorboard
-writer = SummaryWriter(f'tensorboard/experiment-{experiment_no}')
-
-# write loss and f1 to tensorboard
-for epoch in range(int(config.epoch)):
-    # loss
-    writer.add_scalars(f'Loss/train_total',
-                    {f'{fold}-fold': round(all_train_total_loss[fold][epoch], 5)
-                    for fold in range(int(config.kfold))}, epoch)
-    writer.add_scalars(f'Loss/train_total_lexicon',
-                    {f'{fold}-fold': round(all_train_total_lexicon_loss[fold][epoch], 5)
-                    for fold in range(int(config.kfold))}, epoch)
-    writer.add_scalars(f'Loss/train_stance',
-                    {f'{fold}-fold': round(all_train_stance_loss[fold][epoch], 5)
-                    for fold in range(int(config.kfold))}, epoch)
-    writer.add_scalars(f'Loss/train_stance_lexicon',
-                    {f'{fold}-fold': round(all_train_stance_lexicon_loss[fold][epoch], 5)
-                    for fold in range(int(config.kfold))}, epoch)
-    writer.add_scalars(f'Loss/valid_stance',
-                    {f'{fold}-fold': round(all_valid_stance_loss[fold][epoch], 5)
-                    for fold in range(int(config.kfold))}, epoch)
-    writer.add_scalars(f'Loss/valid_stance_lexicon',
-                    {f'{fold}-fold': round(all_valid_stance_lexicon_loss[fold][epoch], 5)
-                    for fold in range(int(config.kfold))}, epoch)
-
-    # f1
-    writer.add_scalars(f'F1/train_stance',
-                       {f'{fold}-fold': round(all_train_stance_f1[fold][epoch], 5)
-                       for fold in range(int(config.kfold))}, epoch)
-    writer.add_scalars(f'F1/valid_stance',
-                       {f'{fold}-fold': round(all_valid_stance_f1[fold][epoch], 5)
-                       for fold in range(int(config.kfold))}, epoch)
 
 # add hyperparameters and final result to tensorboard
 writer.add_hparams({
