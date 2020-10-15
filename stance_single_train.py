@@ -261,7 +261,9 @@ for fold, (train_index, valid_index) in enumerate(data_kf, start=1):
               f'stance loss: {valid_loss}, stance f1: {valid_f1}\n')
 
         # save model
-        if best_valid_loss is None or valid_loss < best_valid_loss:
+        if (best_valid_loss is None) or \
+           (valid_loss < best_valid_loss) or \
+           (valid_f1 < best_valid_f1):
             # check model save path
             if not os.path.exists(f'{save_path}/{fold}-fold'):
                 os.makedirs(f'{save_path}/{fold}-fold')

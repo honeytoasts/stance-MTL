@@ -331,7 +331,8 @@ for fold, ((stance_train_index, stance_valid_index), \
 
         # save model
         if (best_valid_stance_loss is None) or \
-           (valid_stance_loss < best_valid_stance_loss):
+           (valid_stance_loss < best_valid_stance_loss) or \
+           (valid_stance_f1 < best_valid_stance_f1):
             # check model save path
             if not os.path.exists(f'{save_path}/{fold}-fold'):
                 os.makedirs(f'{save_path}/{fold}-fold')
