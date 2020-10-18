@@ -6,6 +6,7 @@ class Config:
     def __init__(self, **kwargs):
         self.stance_dataset = kwargs.pop('stance_dataset', 'semeval2016')
         self.embedding_file = kwargs.pop('embedding_file', 'glove')
+        self.lexicon_file = kwargs.pop('lexicon_file', 'emolex_emotion')
 
         self.random_seed = kwargs.pop('random_seed', 7)
         self.epoch = kwargs.pop('epoch', 1)
@@ -22,6 +23,7 @@ class Config:
         self.num_linear_layers = kwargs.pop('num_linear_layers', 1)
         self.attention = kwargs.pop('attention', 'dot')
         self.clip_grad_value = kwargs.pop('clip_grad_value', 1)
+        self.nli_loss_weight = kwargs.pop('nli_loss_weight', 1.0)
         self.lexicon_loss_weight = kwargs.pop('lexicon_loss_weight', 0.025)
 
     def load_from_file(self, file_path=None):
@@ -37,6 +39,8 @@ class Config:
                 hyperparameters.pop('stance_dataset', self.stance_dataset)
             self.embedding_file = \
                 hyperparameters.pop('embedding_file', self.embedding_file)
+            self.lexicon_file = \
+                hyperparameters.pop('lexicon_file', self.lexicon_file)
 
             self.random_seed = \
                 hyperparameters.pop('random_seed', self.random_seed)
@@ -67,6 +71,8 @@ class Config:
                 hyperparameters.pop('attention', self.attention)
             self.clip_grad_value = \
                 hyperparameters.pop('clip_grad_value', self.clip_grad_value)
+            self.nli_loss_weight = \
+                hyperparameters.pop('nli_loss_weight', self.nli_loss_weight)
             self.lexicon_loss_weight = \
                 hyperparameters.pop('lexicon_loss_weight', self.lexicon_loss_weight)
 
@@ -80,6 +86,7 @@ class Config:
                 hyperparameters = {
                     'stance_dataset': self.stance_dataset,
                     'embedding_file': self.embedding_file,
+                    'lexicon_file': self.lexicon_file,
                     'random_seed': self.random_seed,
                     'epoch': self.epoch,
                     'batch_size': self.batch_size,
@@ -94,6 +101,7 @@ class Config:
                     'num_linear_layers': self.num_linear_layers,
                     'attention': self.attention,
                     'clip_grad_value': self.clip_grad_value,
+                    'nli_loss_weight': self.nli_loss_weight,
                     'lexicon_loss_weight': self.lexicon_loss_weight
                 }
 

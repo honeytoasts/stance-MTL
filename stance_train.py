@@ -24,9 +24,10 @@ import models
 import loss
 
 # hyperparameter setting
-experiment_no = 4
+experiment_no = 6
 config = configs.Config(stance_dataset='semeval2016',
                         embedding_file='glove/glove.twitter.27B.200d.txt',
+                        lexicon_file='emolex_emotion',
                         random_seed=7,
                         epoch=50,
                         batch_size=32,
@@ -41,7 +42,8 @@ config = configs.Config(stance_dataset='semeval2016',
                         num_linear_layers=1,
                         attention='dot',
                         clip_grad_value=0,
-                        lexicon_loss_weight=0.045)
+                        nli_loss_weight=1.0,
+                        lexicon_loss_weight=0.035)
 
 # deinfe save path
 save_path = f'model/{experiment_no}'
@@ -116,7 +118,7 @@ nli_data_df['label_encode'] = nli_data_df['label'].apply(
     lambda label: nli_label[label])
 
 # load lexicon
-lexicon = datas.load_lexicon(lexicon='emolex_emotion')
+lexicon = datas.load_lexicon(lexicon=config.lexicon_file)
 
 # content encode to lexicon vector
 print('lexicon encode --')

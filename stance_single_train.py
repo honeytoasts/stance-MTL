@@ -27,6 +27,7 @@ import loss_single as loss
 experiment_no = 1
 config = configs.Config(stance_dataset='semeval2016',
                         embedding_file='glove/glove.twitter.27B.200d.txt',
+                        lexicon_file='emolex_emotion',
                         random_seed=7,
                         epoch=50,
                         batch_size=32,
@@ -40,6 +41,7 @@ config = configs.Config(stance_dataset='semeval2016',
                         num_linear_layers=1,
                         attention='dot',
                         clip_grad_value=0,
+                        nli_loss_weight=1.0,
                         lexicon_loss_weight=0)
 
 # deinfe save path
@@ -104,7 +106,7 @@ data_df['label_encode'] = data_df['label'].apply(
     lambda label: stance_label[label])
 
 # load lexicon
-lexicon = datas.load_lexicon(lexicon='emolex_emotion')
+lexicon = datas.load_lexicon(lexicon=config.lexicon_file)
 
 # content encode to lexicon vector
 print('lexicon encode --')

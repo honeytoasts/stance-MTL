@@ -21,9 +21,9 @@ import models
 import loss
 
 # parameter and model path setting
-experiment_no = 1
+experiment_no = 3
 fold = 1
-epoch = 39
+epoch = 11
 model_path = f'model/{experiment_no}/'
 
 # initialize device
@@ -65,7 +65,7 @@ data_df['label_encode'] = data_df['label'].apply(
     lambda label: stance_label[label])
 
 # load lexicon
-lexicon = datas.load_lexicon(lexicon='emolex_emotion')
+lexicon = datas.load_lexicon(lexicon=config.lexicon_file)
 
 # content encode to lexicon vector
 print('lexicon encode --')
