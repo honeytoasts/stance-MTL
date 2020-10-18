@@ -136,11 +136,12 @@ def evaluate(model, batch_iterator, phase='train'):
             pred_y, attn_weight = model(x1, x2)
 
             # evaluate loss
-            batch_loss = loss.loss_function(lexicon_vector=lexicon,
-                                            tokenizer=tokenizer, predict=pred_y,
-                                            target=y, attn_weight=attn_weight,
-                                            beta=config.lexicon_loss_weight,
-                                            device=device)
+            batch_loss, _= \
+                loss.loss_function(lexicon_vector=lexicon,
+                                   tokenizer=tokenizer, predict=pred_y,
+                                   target=y, attn_weight=attn_weight,
+                                   lexicon_loss_weight=config.lexicon_loss_weight,
+                                   device=device)
             total_loss += batch_loss
 
             all_label_y.extend(y.tolist())
@@ -232,11 +233,12 @@ for fold, (train_index, valid_index) in enumerate(data_kf, start=1):
             optimizer.zero_grad()
 
             # calculate loss
-            batch_loss = loss.loss_function(lexicon_vector=train_lexicon,
-                                            tokenizer=tokenizer, predict=pred_y,
-                                            target=train_y, attn_weight=attn_weight,
-                                            beta=config.lexicon_loss_weight,
-                                            device=device)
+            batch_loss, _ = \
+                loss.loss_function(lexicon_vector=train_lexicon,
+                                   tokenizer=tokenizer, predict=pred_y,
+                                   target=train_y, attn_weight=attn_weight,
+                                   lexicon_loss_weight=config.lexicon_loss_weight,
+                                   device=device)
 
             # backward pass
             batch_loss.backward()
@@ -264,8 +266,7 @@ for fold, (train_index, valid_index) in enumerate(data_kf, start=1):
 
         # save model
         if (best_valid_loss is None) or \
-           (valid_loss < best_valid_loss) or \
-           (valid_f1 < best_valid_f1):
+           (valid_loss < best_valid_loss) or (valid_f1 > best_valid_f1):
             # check model save path
             if not os.path.exists(f'{save_path}/{fold}-fold'):
                 os.makedirs(f'{save_path}/{fold}-fold')
@@ -301,6 +302,7 @@ writer.add_hparams({
     'valid_f1': best_valid_f1.item(),
     'stance_dataset': config.stance_dataset,
     'embedding_file': config.embedding_file,
+    'lexicon_file': config.lexicon_file,
     'batch_size': str(config.batch_size),
     'lr': str(config.learning_rate),
     'dropout': str(config.dropout),
@@ -309,6 +311,7 @@ writer.add_hparams({
     'num_rnn_layers': str(config.num_rnn_layers),
     'num_linear_layers': str(config.num_linear_layers),
     'clip_grad_value': str(config.clip_grad_value),
+    'nli_loss_weight': str(config.nli_loss_weight),
     'lexicon_loss_weight': str(config.lexicon_loss_weight)
 }, metric_dict={})
 writer.close()
