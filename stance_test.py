@@ -19,6 +19,7 @@ import tokenizer
 import embeddings
 import models
 import loss
+import scorer
 
 # parameter and model path setting
 experiment_no = 3
@@ -87,10 +88,12 @@ def evaluate(model, batch_iterator):
 
             # evaluate loss
             batch_loss, batch_lexicon_loss = \
-                loss.loss_function(lexicon_vector=lexicon,
+                loss.loss_function(task_id=task_id,
+                                   lexicon_vector=lexicon,
                                    tokenizer=tokenizer, predict=pred_y,
                                    target=y, attn_weight=attn_weight,
-                                   beta=config.lexicon_loss_weight,
+                                   nli_loss_weight=1.0,
+                                   lexicon_loss_weight=config.lexicon_loss_weight,
                                    device=device)
             total_loss += batch_loss
             total_lexicon_loss += batch_lexicon_loss
@@ -102,15 +105,15 @@ def evaluate(model, batch_iterator):
     total_loss = total_loss / len(batch_iterator)
     total_lexicon_loss = total_lexicon_loss / len(batch_iterator)
 
-    # evaluate f1
-    if config.stance_dataset == 'semeval2016':  
-        # semeval2016 benchmark just consider f1 score for "favor (0)" and "against (1)" label
-        f1 = f1_score(all_label_y, all_pred_y, average='macro', labels=[0, 1])
-    else:
-        f1 = f1_score(all_label_y, all_pred_y, average='macro')
+    # get score and report
+    targets = (data_df['target'] 
+               if config.stance_dataset == 'semeval2016' else None)
+    scores = scorer.score_function(dataset=config.stance_dataset,
+                                   label_y=all_label_y,
+                                   pred_y=all_pred_y,
+                                   targets=targets)
 
-    return (total_loss, total_lexicon_loss, f1,
-            all_label_y, all_pred_y)
+    return total_loss, total_lexicon_loss, scores
 
 # define dataset and dataloader
 dataset = datas.SingleTaskDataset(
@@ -139,12 +142,24 @@ model.eval()
 
 test_iterator = tqdm(dataloader, total=len(dataloader),
                      desc='evaluate test set', position=0)
-loss, lexicon_loss, f1, label_y, pred_y = \
-    evaluate(model, test_iterator)
+loss, lexicon_loss, scores = evaluate(model, test_iterator)
 
 # print result
-print(f'\nexperiment {experiment_no}: {fold}-fold {epoch}-epoch\n'
-      f'dataset: {config.stance_dataset}\n'
-      f'loss: {round(loss.item(), 5)}, '
-      f'lexicon loss: {round(lexicon_loss.item(), 5)}\n'
-      f'f1 score: {round(f1.item(), 5)}')
+if config.stance_dataset == 'semeval2016':
+    _, _, _, _, target_f1, macro_f1, micro_f1 = scores
+
+    print(f'\nexperiment {experiment_no}: {fold}-fold {epoch}-epoch\n'
+          f'dataset: {config.stance_dataset}\n'
+          f'loss: {round(loss.item(), 5)}, '
+          f'lexicon loss: {round(lexicon_loss.item(), 5)}\n'
+          f'target f1: {target_f1}\n'
+          f'macro f1: {macro_f1}, micro f1: {micro_f1}\n')
+
+elif config.stance_dataset == 'fnc-1':
+    _, precision, recall, f1 = scores  # pylint: disable=unbalanced-tuple-unpacking
+
+    print(f'\nexperiment {experiment_no}: {fold}-fold {epoch}-epoch\n'
+          f'dataset: {config.stance_dataset}\n'
+          f'loss: {round(loss.item(), 5)}, '
+          f'lexicon loss: {round(lexicon_loss.item(), 5)}\n'
+          f'f1: {f1}\n')
