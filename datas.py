@@ -37,6 +37,8 @@ def load_dataset_semeval2016(split='train'):
     if split == 'train':
         file_path = ('data/semeval2016/'
                      'semeval2016-task6-trainingdata.txt')
+        file_path2 = ('data/semeval2016/'
+                      'semeval2016-task6-trialdata.txt')
     elif split == 'test':
         file_path = ('data/semeval2016/'
                      'SemEval2016-Task6-subtaskA-testdata-gold.txt')
@@ -48,6 +50,13 @@ def load_dataset_semeval2016(split='train'):
                         desc=f'loading SemEval2016 {split}ing data'):
             _, target, claim, stance = row.split('\t')
             data.append([target.strip(), claim.strip(), stance.strip()])
+    
+    # read train data for another file
+    if split == 'train':
+        with open(file_path2, 'r', encoding='windows-1252') as f:
+            for row in f.readlines()[1:]:
+                _, target, claim, stance = row.split('\t')
+                data.append([target.strip(), claim.strip(), stance.strip()])
 
     # preprocessing
     pattern = r"#SemST|@[a-zA-Z]+|[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ']|RT"
