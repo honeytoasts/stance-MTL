@@ -1,19 +1,16 @@
 # built-in module
-import re
+import os
 import pickle
 
 # 3rd-party module
 import torch
 from tqdm import tqdm
 
-class Embedding:
-    def __init__(self, embedding_dim=100, random_seed=7):
+class BaseEmbedding:
+    def __init__(self, embedding_dim=200):
         self.embedding_dim = embedding_dim
         self.word_dict = {}
         self.vector = torch.Tensor()
-        self.random_seed = random_seed
-
-        torch.manual_seed(self.random_seed)
 
         if '[pad]' not in self.word_dict:
             self.add_embedding('[pad]', torch.zeros(self.embedding_dim))
@@ -67,18 +64,19 @@ class Embedding:
         vectors = torch.Tensor(vectors)
         self.vector = torch.cat([self.vector, vectors], dim=0)
 
-    def load_from_file(self, file_path=None):
+    def load(self, file_path=None):
         if file_path is None or type(file_path) != str:
             raise ValueError('argument `file_path` should be a string')
-        else:
-            with open(file_path, 'rb') as f:
-                embedding = pickle.load(f)
-                self.embedding_dim = embedding.embedding_dim
-                self.word_dict = embedding.word_dict
-                self.vector = embedding.vector
-                self.random_seed = embedding.random_seed
+        elif not os.path.exists(file_path):
+            raise FileNotFoundError('file {} does not exist'.format(file_path))
 
-    def save_to_file(self, file_path=None):
+        with open(file_path, 'rb') as f:
+            embedding = pickle.load(f)
+            self.embedding_dim = embedding.embedding_dim
+            self.word_dict = embedding.word_dict
+            self.vector = embedding.vector
+
+    def save(self, file_path=None):
         if file_path is None or type(file_path) != str:
             raise ValueError('argument `file_path` should be a string')
         else:

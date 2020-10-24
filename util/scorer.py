@@ -3,6 +3,25 @@ import pandas as pd
 import sklearn
 from sklearn import metrics
 
+def fnc_score(label_y, pred_y):
+    # specfiy related label
+    related = [0, 1, 2]
+    unrelated = 3
+
+    # calculate score
+    score = 0.0
+    for label, pred in zip(label_y, pred_y):
+        if label == pred:
+            score += 0.25
+            if label != unrelated:
+                score += 0.50
+        if label in related and pred in related:
+            score += 0.25
+
+    score = score / len(label_y)
+
+    return score
+
 def score_function(dataset, label_y, pred_y, targets=None):
     # specify label according dataset
     if dataset == 'semeval2016':

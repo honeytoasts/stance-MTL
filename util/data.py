@@ -1,25 +1,19 @@
 # built-in module
-import re
 import unicodedata
 import random
 
 # 3rd-party module
-import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import torch
 
-def preprocessing(pattern, data):
+def preprocessing(data):
     # encoding normalize
     data = [[unicodedata.normalize('NFKC', str(column))
              for column in row] for row in data]
 
-    # remove specific pattern
-    data = [[re.sub(pattern, ' ', column)
-             for column in row] for row in data]
-
     # change to lowercase
-    data = [[column.lower() for column in row] for row in data]
+    data = [[column.lower().strip() for column in row] for row in data]
 
     return data
 
@@ -49,18 +43,17 @@ def load_dataset_semeval2016(split='train'):
         for row in tqdm(f.readlines()[1:],
                         desc=f'loading SemEval2016 {split}ing data'):
             _, target, claim, stance = row.split('\t')
-            data.append([target.strip(), claim.strip(), stance.strip()])
-    
+            data.append([target, claim, stance])
+
     # read train data for another file
     if split == 'train':
         with open(file_path2, 'r', encoding='windows-1252') as f:
             for row in f.readlines()[1:]:
                 _, target, claim, stance = row.split('\t')
-                data.append([target.strip(), claim.strip(), stance.strip()])
+                data.append([target, claim, stance])
 
     # preprocessing
-    pattern = r"#SemST|@[a-zA-Z]+|[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ']|RT"
-    data = preprocessing(pattern, data)
+    data = preprocessing(data)
 
     # convert to dataframe
     data_df = convert_to_dataframe(data)
@@ -86,12 +79,10 @@ def load_dataset_fnc(split='train'):
                        total=len(target_df)):
         claim = claim_df.loc[claim_df['Body ID'] == row['Body ID'], 
                              'articleBody'].tolist()[0]
-        data.append([row['Headline'].strip(), claim.strip(), 
-                     row['Stance'].strip()])
+        data.append([row['Headline'], claim, row['Stance']])
 
     # preprocessing
-    pattern = r"[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ']"
-    data = preprocessing(pattern, data)
+    data = preprocessing(data)
 
     # convert to dataframe
     data_df = convert_to_dataframe(data)
@@ -116,8 +107,7 @@ def load_dataset_mnli(split='train'):
             data.append([row[5], row[6], row[0]])
 
     # preprocessing
-    pattern = r"[0-9]+\S[0-9]*|[0-9]+|[^a-zA-Z ']"
-    data = preprocessing(pattern, data)
+    data = preprocessing(data)
 
     # convert to dataframe
     data_df = convert_to_dataframe(data)
@@ -156,10 +146,10 @@ def load_lexicon_emolex(types='emotion'):
             word, emotion, value = row.split('\t')
             if types == 'emotion':
                 if emotion not in ['negative', 'positive'] and value != '0':
-                    lexicons.append(word)
+                    lexicons.append(word.strip())
             elif types == 'sentiment':
                 if emotion in ['negative', 'positive'] and value != '0':
-                    lexicons.append(word)
+                    lexicons.append(word.strip())
 
     lexicons = list(set(lexicons))
 
@@ -179,56 +169,54 @@ class MultiTaskBatchSampler(torch.utils.data.BatchSampler):
         self.datasets = datasets
         self.batch_size = batch_size
         self.random_seed = random_seed
-        data_index_batch_list = []
 
+        data_batch_index_list = []
         for dataset in datasets:
-            data_index_batch_list.append(
-                self.get_shuffled_index_batches(
-                    len(dataset), batch_size, random_seed))
-        self.data_index_batch_list = data_index_batch_list
+            data_batch_index_list.append(
+                self.get_shuffled_batch_index(len(dataset), batch_size))
+
+        self.data_batch_index_list = data_batch_index_list
 
     @staticmethod
-    def get_shuffled_index_batches(dataset_len, batch_size, random_seed):
+    def get_shuffled_batch_index(dataset_len, batch_size):
         # get all index and shuffle them
         index_list = list(range(dataset_len))
-        random.seed(random_seed)
         random.shuffle(index_list)
 
         # get batch index
-        index_batches = []
+        batches_index = []
 
         for i in range(0, dataset_len, batch_size):
-            index_batch = []
+            batch_index = []
             for j in range(i, min(i+batch_size, dataset_len)):
-                index_batch.append(index_list[j])
-            index_batches.append(index_batch)
+                batch_index.append(index_list[j])
+            batches_index.append(batch_index)
 
         # shuffle batch index
-        random.seed(random_seed)
-        random.shuffle(index_batches)
+        random.shuffle(batches_index)
 
-        return index_batches
+        return batches_index
 
     @staticmethod
-    def get_task_indices(data_index_batch_list, random_seed):
+    def get_task_indices(data_batch_index_list, random_seed):
         all_indices = []
 
-        for task_id, dataset in enumerate(data_index_batch_list):
+        for task_id, dataset in enumerate(data_batch_index_list):
             all_indices += [task_id]*len(dataset)
 
         # shuffle task indices
-        random.seed(random_seed)
+        random.seed(random_seed)  # set random seed
         random.shuffle(all_indices)
 
         return all_indices
 
     def __len__(self):
-        return sum(len(data) for data in self.data_index_batch_list)
+        return sum(len(data) for data in self.data_batch_index_list)
 
     def __iter__(self):
         all_iters = [iter(task_data)
-                     for task_data in self.data_index_batch_list]
-        all_task_indices = self.get_task_indices(self.data_index_batch_list,
+                     for task_data in self.data_batch_index_list]
+        all_task_indices = self.get_task_indices(self.data_batch_index_list,
                                                  self.random_seed)
 
         for task_id in all_task_indices:
@@ -236,7 +224,7 @@ class MultiTaskBatchSampler(torch.utils.data.BatchSampler):
             yield [(task_id, data_id) for data_id in batch]
 
 class SingleTaskDataset(torch.utils.data.Dataset):
-    def __init__(self, task_id, 
+    def __init__(self, task_id,
                  target_encode, claim_encode,
                  claim_lexicon, label_encode):
         # 0 for stance detection and 1 for NLI
@@ -259,7 +247,7 @@ class SingleTaskDataset(torch.utils.data.Dataset):
         x1 = [data[1] for data in batch]
         x2 = [data[2] for data in batch]
         lexicon = [data[3] for data in batch]
-        y = torch.LongTensor([data[4].item() for data in batch])
+        y = torch.LongTensor([data[4] for data in batch])
 
         # pad sequence to fixed length with pad_token_id
         x1 = torch.nn.utils.rnn.pad_sequence(x1,
@@ -268,7 +256,7 @@ class SingleTaskDataset(torch.utils.data.Dataset):
         x2 = torch.nn.utils.rnn.pad_sequence(x2,
                                              batch_first=True,
                                              padding_value=pad_token_id)
-        
+
         # pad lexicon to fixed length with value "0.0"
         lexicon = torch.nn.utils.rnn.pad_sequence(lexicon,
                                                   batch_first=True,
