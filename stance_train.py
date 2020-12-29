@@ -17,27 +17,27 @@ import tensorboard
 import util
 
 # hyperparameter setting
-experiment_no = 1
+experiment_no = 61
 config = util.config.BaseConfig(# experiment no
                                 experiment_no=experiment_no,
                                 # preprocess
                                 tokenizer='WordPunctTokenizer',
                                 filter='all',
-                                min_count=5,
+                                min_count=1,
                                 max_seq_len=20,
                                 # dataset and lexicon
                                 stance_dataset='semeval2016',
-                                embedding_file='glove/glove.twitter.27B.200d.txt',
+                                embedding_file='fasttext/crawl-300d-2M.vec',
                                 lexicon_file='emolex_emotion',
                                 # hyperparameter
-                                embedding_dim=200,
+                                embedding_dim=300,
                                 task_hidden_dim=100,
                                 shared_hidden_dim=100,
                                 num_rnn_layers=1,
                                 num_linear_layers=1,
                                 attention='dot',
                                 dropout=0.2,
-                                learning_rate=1e-4,
+                                learning_rate=5e-5,
                                 clip_grad_value=0,
                                 weight_decay=0,
                                 lr_decay_step=10,
@@ -46,11 +46,11 @@ config = util.config.BaseConfig(# experiment no
                                 lexicon_loss_weight=0,
                                 random_seed=77,
                                 kfold=5,
-                                train_test_split=0.15,
-                                epoch=50,
+                                train_test_split=0.2,
+                                epoch=70,
                                 batch_size=32)
 
-# deinfe save path
+# define save path
 save_path = f'model/{experiment_no}'
 if not os.path.exists(save_path):
     os.makedirs(save_path)
@@ -103,8 +103,7 @@ embedding.load_embedding(embedding_path=f'data/embedding/{config.embedding_file}
 # build vocabulary dictionary
 tokenizer.build_dict(embedding.word_dict)
 
-# content encode to id
-print('content encode --')
+# encode content to id
 stance_data_df['target_encode'] = \
     tokenizer.encode(stance_data_df['target'].tolist())
 stance_data_df['claim_encode'] = \
@@ -115,7 +114,6 @@ nli_data_df['claim_encode'] = \
     tokenizer.encode(nli_data_df['claim'].tolist())
 
 # label encode
-print('label encode --')
 if 'semeval' in config.stance_dataset:
     stance_label = {'favor': 0, 'against': 1, 'none': 2}
 elif 'fnc' in config.stance_dataset:
@@ -128,14 +126,16 @@ nli_data_df['label_encode'] = nli_data_df['label'].apply(
     lambda label: nli_label[label])
 
 # load lexicon
-lexicon = util.data.load_lexicon(lexicon=config.lexicon_file)
+lexicons = util.data.load_lexicon(lexicon=config.lexicon_file)
 
-# content encode to lexicon vector
-print('lexicon encode --')
+# build lexicon dictionary
+tokenizer.build_lexicon_dict(lexicons)
+
+# encode content to lexicon vector
 stance_data_df['claim_lexicon'] = \
-    tokenizer.encode_to_lexicon(stance_data_df['claim_encode'].tolist(), lexicon)
+    tokenizer.encode_to_lexicon(stance_data_df['claim_encode'].tolist())
 nli_data_df['claim_lexicon'] = \
-    tokenizer.encode_to_lexicon(nli_data_df['claim_encode'].tolist(), lexicon)
+    tokenizer.encode_to_lexicon(nli_data_df['claim_encode'].tolist())
 
 # save config, tokenizer and embedding
 config_path = f'{save_path}/config.json'

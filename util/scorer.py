@@ -56,6 +56,8 @@ def score_function(dataset, label_y, pred_y, targets=None):
 
         # get f1-score for each target
         for target in target_name:
+            print(targets==target)
+            print(label_series)
             labels = label_series[targets == target].tolist()
             preds = pred_series[targets == target].tolist()
             f1 = metrics.f1_score(labels, preds, average='macro', labels=[0, 1])

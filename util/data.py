@@ -145,10 +145,10 @@ def load_lexicon_emolex(types='emotion'):
                         desc=f'loading EmoLex lexicon data'):
             word, emotion, value = row.split('\t')
             if types == 'emotion':
-                if emotion not in ['negative', 'positive'] and value != '0':
+                if emotion not in ['negative', 'positive'] and int(value) == 1:
                     lexicons.append(word.strip())
             elif types == 'sentiment':
-                if emotion in ['negative', 'positive'] and value != '0':
+                if emotion in ['negative', 'positive'] and int(value) == 1:
                     lexicons.append(word.strip())
 
     lexicons = list(set(lexicons))

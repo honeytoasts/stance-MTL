@@ -84,5 +84,5 @@ def evaluate_function(model, config, batch_iterator,
                 stance_loss, stance_lexicon_loss,
                 nli_loss, nli_lexicon_loss,
                 acc)
-    else:
+    elif phase == 'valid':
         return (total_loss, total_lexicon_loss, acc)

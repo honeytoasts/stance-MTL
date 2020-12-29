@@ -6,6 +6,7 @@ from nltk import tokenize
 
 # 3rd-party module
 from tqdm import tqdm
+import pandas as pd
 
 class BaseTokenizer:
     def __init__(self, config):
@@ -33,6 +34,7 @@ class BaseTokenizer:
         self.token_to_id = {}
         self.id_to_token = {}
         self.all_tokens = []
+        self.lexicon_dict = {}
         self.config = config
 
         self.token_to_id[self.pad_token] = self.pad_token_id
@@ -55,6 +57,13 @@ class BaseTokenizer:
                              "-", ".", "/", ":", ";", "<", ">", "@", "[", "]", "^", 
                              "_", "`", "{", "|", "}", "~", "=", "+", "!",  "?"])
             stopword.extend(["rt", "#semst", "...", "thats", "im", "'s", "via"])
+
+            self.stopwords = stopword
+        elif config.filter == 'punctonly':
+            stopword = ["\"", "#", "$", "%", "&", "\\", "'", "(", ")", "*", ",",
+                        "-", ".", "/", ":", ";", "<", ">", "@", "[", "]", "^", 
+                        "_", "`", "{", "|", "}", "~", "=", "+", "!",  "?"]
+            stopword.extend(["rt", "#semst", "..."])
 
             self.stopwords = stopword
         elif config.filter == 'none':
@@ -87,7 +96,7 @@ class BaseTokenizer:
 
         # calculate word count
         words_count = {}
-        for sentence in tqdm(sentences, desc='get all tokens'):
+        for sentence in sentences:
             for token in sentence:
                 words_count[token] = words_count.setdefault(token, 0) + 1
 
@@ -101,6 +110,22 @@ class BaseTokenizer:
     def build_dict(self, word_dict):
         self.token_to_id = word_dict
         self.id_to_token = {idx: token for token, idx in word_dict.items()}
+        self.all_tokens = [word for word in word_dict]
+
+    def build_lexicon_dict(self, lexicons):
+        # convert lexicons token to id
+        lexicon_dict = {}
+        token_series = pd.Series(self.token_to_id.keys())
+
+        for lexicon in tqdm(lexicons, desc='build lexicon dictionary'):
+            # check whether lexicon in all_tokens
+            lexicon_in_tokens = token_series.str.startswith(lexicon)
+            lexicon_ids = lexicon_in_tokens[lexicon_in_tokens == True].index.tolist()
+
+            for idx in lexicon_ids:
+                lexicon_dict[idx] = 1
+
+        self.lexicon_dict = lexicon_dict
 
     def convert_tokens_to_ids(self, sentences):
         result = []
@@ -156,16 +181,14 @@ class BaseTokenizer:
 
         return sentences
 
-    def encode_to_lexicon(self, sentences, lexicons):
-        # convert lexicons token to id
-        lexicons_id = self.convert_tokens_to_ids([lexicons])[0]
-        lexicons_dict = {idx: 1 for idx in lexicons_id}
+    def encode_to_lexicon(self, sentences):
+        # encode to lexicon vector
         lexicon_vectors = []
 
         for sentence in sentences:
-            lexicon_vector = [lexicons_dict.get(token, 0)
+            lexicon_vector = [self.lexicon_dict.get(token, 0)
                               for token in sentence]
-            lexicon_vectors.append(lexicon_vector)
+            lexicon_vectors.append(lexicon_vector)      
 
         return lexicon_vectors
 

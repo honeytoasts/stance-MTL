@@ -87,10 +87,14 @@ class TSBiLSTM(torch.nn.Module):
         # claim BiLSTM
         self.claim_BiLSTM = nn.LSTM(**claim_parameter)
 
+        # linear layer for attention
+        if config.attention == 'linear':
+            self.attn_linear = nn.Linear(hidden_dim * 4, 1)  # to scalar value
+
     def forward(self, batch_x1, batch_x2):
         # target: get final ht of the last layer
         target_ht, _ = self.target_BiLSTM(batch_x1)  # (B, S, 2H)
-        target_ht = target_ht[:, -1]  # (B, 2xH)
+        target_ht = target_ht[:, -1]  # (B, 2H)
 
         # claim: get all ht of the last layer
         claim_ht, _ = self.claim_BiLSTM(batch_x2)  # (B, S, 2H)
@@ -98,6 +102,27 @@ class TSBiLSTM(torch.nn.Module):
         # get the attention weight
         if self.config.attention == 'dot':
             weight = torch.matmul(claim_ht, target_ht.unsqueeze(2)).squeeze(2)  # (B, S)
+            soft_weight = F.softmax(weight, dim=1)  # (B, S)
+
+        elif self.config.attention == 'linear':
+            # concat target and claim
+            target_ht = target_ht.repeat_interleave(
+                self.config.max_seq_len, 0)  # (BxS, 2H)
+            target_ht = target_ht.reshape(
+                -1, self.config.max_seq_len, target_ht.shape[1])  # (B, S, 2H)
+            new_claim_ht = torch.cat((claim_ht, target_ht), 2)  # (B, S, 4H)
+
+            # apply linear layer to get the attention weight
+            weight = self.attn_linear(new_claim_ht)  # (B, S, 1)
+            soft_weight = F.softmax(weight.squeeze(2), dim=1)  # (B, S)
+
+        elif self.config.attention == 'cos':
+            target_ht = target_ht.repeat_interleave(
+                self.config.max_seq_len, 0)  # (BxS, 2H)
+            target_ht = target_ht.reshape(
+                -1, self.config.max_seq_len, target_ht.shape[1])  # (B, S, 2H)
+
+            weight = F.cosine_similarity(claim_ht, target_ht, dim=2)  # (B, S)
             soft_weight = F.softmax(weight, dim=1)  # (B, S)
 
         # get final representation
