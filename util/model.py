@@ -2,6 +2,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from util import custom_lstms
 
 class BaseModel(torch.nn.Module):
     def __init__(self, config, num_embeddings,
@@ -67,22 +68,42 @@ class TSBiLSTM(torch.nn.Module):
         elif shared == True:
             hidden_dim = config.shared_hidden_dim
 
+        # # get parameters of LSTM
+        # target_parameter = {'input_size': config.embedding_dim,
+        #                     'hidden_size': hidden_dim,
+        #                     'num_layers': 1,
+        #                     'batch_first': True,
+        #                     'bidirectional': True}
+        # claim_parameter = {'input_size': config.embedding_dim,
+        #                    'hidden_size': hidden_dim,
+        #                    'num_layers': config.num_rnn_layers,
+        #                    'batch_first': True,
+        #                    'bidirectional': True}
+        # if int(config.num_rnn_layers) > 1:
+        #     claim_parameter['dropout'] = config.dropout
+
+        # # target BiLSTM
+        # self.target_BiLSTM = nn.LSTM(**target_parameter)
+
+        # # claim BiLSTM
+        # self.claim_BiLSTM = nn.LSTM(**claim_parameter)
+
         # get parameters of LSTM
         target_parameter = {'input_size': config.embedding_dim,
                             'hidden_size': hidden_dim,
                             'num_layers': 1,
+                            'batch_size': config.batch_size,
                             'batch_first': True,
                             'bidirectional': True}
         claim_parameter = {'input_size': config.embedding_dim,
                            'hidden_size': hidden_dim,
                            'num_layers': config.num_rnn_layers,
+                        #    'batch_size': config.batch_size,
                            'batch_first': True,
                            'bidirectional': True}
-        if int(config.num_rnn_layers) > 1:
-            claim_parameter['dropout'] = config.dropout
 
         # target BiLSTM
-        self.target_BiLSTM = nn.LSTM(**target_parameter)
+        self.target_BiLSTM = custom_lstms.LayerNormLSTM(**target_parameter)
 
         # claim BiLSTM
         self.claim_BiLSTM = nn.LSTM(**claim_parameter)

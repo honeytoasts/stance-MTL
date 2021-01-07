@@ -203,6 +203,10 @@ class BaseTokenizer:
             self.token_to_id = tokenizer.token_to_id
             self.id_to_token = tokenizer.id_to_token
             self.all_tokens = tokenizer.all_tokens
+            try:
+                self.lexicon_dict = tokenizer.lexicon_dict
+            except:
+                pass
 
     def save(self, file_path=None):
         if file_path is None or type(file_path) != str:
