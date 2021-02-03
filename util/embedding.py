@@ -5,6 +5,7 @@ import pickle
 # 3rd-party module
 import torch
 from tqdm import tqdm
+import fasttext
 
 class BaseEmbedding:
     def __init__(self, embedding_dim=200):
@@ -36,7 +37,7 @@ class BaseEmbedding:
         self.word_dict[token] = len(self.word_dict)
         self.vector = torch.cat([self.vector, vector], dim=0)
 
-    def load_embedding(self, embedding_path, tokens):
+    def load_file_embedding(self, embedding_path, tokens):
         tokens = set(tokens)
         vectors = []
 
@@ -44,6 +45,7 @@ class BaseEmbedding:
         with open(embedding_path) as f:
             file_len = len(f.readlines())
 
+        # get embedding in file
         with open(embedding_path) as f:
             firstrow = f.readline()
 
@@ -63,6 +65,27 @@ class BaseEmbedding:
 
         vectors = torch.Tensor(vectors)
         self.vector = torch.cat([self.vector, vectors], dim=0)
+
+        # check embedding dimension
+        assert self.embedding_dim == self.vector.shape[1]
+
+    def load_fasttext_embedding(self, tokens):
+        tokens = set(tokens)
+        vectors = []
+
+        # get fasttext embedding
+        ft_embedding = fasttext.load_model('data/embedding/fasttext/cc.en.300.bin')
+    
+        for token in tqdm(tokens, desc='load embedding'):
+            self.word_dict[token] = len(self.word_dict)
+            vector = ft_embedding.get_word_vector(token)
+            vectors.append(vector.tolist())
+
+        vectors = torch.Tensor(vectors)
+        self.vector = torch.cat([self.vector, vectors], dim=0)
+
+        # check embedding dimension
+        assert self.embedding_dim == self.vector.shape[1]
 
     def load(self, file_path=None):
         if file_path is None or type(file_path) != str:

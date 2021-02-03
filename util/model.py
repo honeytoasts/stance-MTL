@@ -12,7 +12,7 @@ class BaseModel(torch.nn.Module):
         # config
         self.config = config
 
-        # Embedding layer
+        # embedding layer
         self.embedding_layer = nn.Embedding(num_embeddings=num_embeddings,
                                             embedding_dim=config.embedding_dim,
                                             padding_idx=padding_idx)
@@ -20,18 +20,18 @@ class BaseModel(torch.nn.Module):
             self.embedding_layer.weight = nn.Parameter(embedding_weight)
 
         # TS-BiLSTM
-        self.stance_TS = TSBiLSTM(config, shared=False)
-        self.nli_TS = TSBiLSTM(config, shared=False)
-        self.shared_TS = TSBiLSTM(config, shared=True)
+        self.stance_TS = TSBiLSTM(config, hidden_dim=config.task_hidden_dim)
+        self.nli_TS = TSBiLSTM(config, hidden_dim=config.task_hidden_dim)
+        self.shared_TS = TSBiLSTM(config, hidden_dim=config.shared_hidden_dim)
 
-        # Linear layer
-        self.stance_linear = Linear(config=config, task_id=0)
-        self.nli_linear = Linear(config=config, task_id=1)
+        # linear layer
+        self.stance_linear = Linear(config, task_id=0)
+        self.nli_linear = Linear(config, task_id=1)
 
     def forward(self, task_id, batch_x1, batch_x2):
         # task_id: 0 for stance detection, 1 for NLI
 
-        # Embedding
+        # embedding
         batch_x1 = self.embedding_layer(batch_x1)
         batch_x2 = self.embedding_layer(batch_x2)
 
@@ -40,9 +40,10 @@ class BaseModel(torch.nn.Module):
             task_r, task_weight = self.stance_TS(batch_x1, batch_x2)
         elif task_id == 1:
             task_r, task_weight = self.nli_TS(batch_x1, batch_x2)
+
         shared_r, shared_weight = self.shared_TS(batch_x1, batch_x2)
 
-        # Linear layer
+        # linear layer
         task_r = torch.cat([task_r, shared_r], dim=1)
 
         if task_id == 0:
@@ -50,60 +51,34 @@ class BaseModel(torch.nn.Module):
         elif task_id == 1:
             task_r = self.nli_linear(task_r)
 
-        # Softmax
+        # softmax
         task_r = F.softmax(task_r, dim=1)
 
-        return task_r, (task_weight, shared_weight)
+        return task_r, task_weight, shared_weight
 
 class TSBiLSTM(torch.nn.Module):
-    def __init__(self, config, shared=False):
+    def __init__(self, config, hidden_dim):
         super(TSBiLSTM, self).__init__()
 
         # config
         self.config = config
 
-        # get hidden dimension
-        if shared == False:
-            hidden_dim = config.task_hidden_dim
-        elif shared == True:
-            hidden_dim = config.shared_hidden_dim
-
-        # # get parameters of LSTM
-        # target_parameter = {'input_size': config.embedding_dim,
-        #                     'hidden_size': hidden_dim,
-        #                     'num_layers': 1,
-        #                     'batch_first': True,
-        #                     'bidirectional': True}
-        # claim_parameter = {'input_size': config.embedding_dim,
-        #                    'hidden_size': hidden_dim,
-        #                    'num_layers': config.num_rnn_layers,
-        #                    'batch_first': True,
-        #                    'bidirectional': True}
-        # if int(config.num_rnn_layers) > 1:
-        #     claim_parameter['dropout'] = config.dropout
-
-        # # target BiLSTM
-        # self.target_BiLSTM = nn.LSTM(**target_parameter)
-
-        # # claim BiLSTM
-        # self.claim_BiLSTM = nn.LSTM(**claim_parameter)
-
         # get parameters of LSTM
         target_parameter = {'input_size': config.embedding_dim,
                             'hidden_size': hidden_dim,
                             'num_layers': 1,
-                            'batch_size': config.batch_size,
                             'batch_first': True,
                             'bidirectional': True}
         claim_parameter = {'input_size': config.embedding_dim,
                            'hidden_size': hidden_dim,
                            'num_layers': config.num_rnn_layers,
-                        #    'batch_size': config.batch_size,
                            'batch_first': True,
                            'bidirectional': True}
+        if int(config.num_rnn_layers) > 1:
+            claim_parameter['dropout'] = config.dropout
 
         # target BiLSTM
-        self.target_BiLSTM = custom_lstms.LayerNormLSTM(**target_parameter)
+        self.target_BiLSTM = nn.LSTM(**target_parameter)
 
         # claim BiLSTM
         self.claim_BiLSTM = nn.LSTM(**claim_parameter)
@@ -113,6 +88,9 @@ class TSBiLSTM(torch.nn.Module):
             self.attn_linear = nn.Linear(hidden_dim * 4, 1)  # to scalar value
 
     def forward(self, batch_x1, batch_x2):
+        # get claim sequence length
+        claim_seq_len = batch_x2.shape[1]
+
         # target: get final ht of the last layer
         target_ht, _ = self.target_BiLSTM(batch_x1)  # (B, S, 2H)
         target_ht = target_ht[:, -1]  # (B, 2H)
@@ -126,24 +104,24 @@ class TSBiLSTM(torch.nn.Module):
             soft_weight = F.softmax(weight, dim=1)  # (B, S)
 
         elif self.config.attention == 'linear':
+            # get target hidden vector
+            target_ht = target_ht.repeat(claim_seq_len, 1, 1)  # (S, B, 2H)
+            target_ht = target_ht.transpose(0, 1)  # (B, S, 2H)
+
             # concat target and claim
-            target_ht = target_ht.repeat_interleave(
-                self.config.max_seq_len, 0)  # (BxS, 2H)
-            target_ht = target_ht.reshape(
-                -1, self.config.max_seq_len, target_ht.shape[1])  # (B, S, 2H)
-            new_claim_ht = torch.cat((claim_ht, target_ht), 2)  # (B, S, 4H)
+            new_claim_ht = torch.cat((target_ht, claim_ht), 2)  # (B, S, 4H)
 
             # apply linear layer to get the attention weight
             weight = self.attn_linear(new_claim_ht)  # (B, S, 1)
             soft_weight = F.softmax(weight.squeeze(2), dim=1)  # (B, S)
 
-        elif self.config.attention == 'cos':
-            target_ht = target_ht.repeat_interleave(
-                self.config.max_seq_len, 0)  # (BxS, 2H)
-            target_ht = target_ht.reshape(
-                -1, self.config.max_seq_len, target_ht.shape[1])  # (B, S, 2H)
+        elif self.config.attention == 'cosine':
+            # get target hidden vector
+            target_ht = target_ht.repeat(claim_seq_len, 1, 1)  # (S, B, 2H)
+            target_ht = target_ht.transpose(0, 1)  # (B, S, 2H)
 
-            weight = F.cosine_similarity(claim_ht, target_ht, dim=2)  # (B, S)
+            # calculate cosine similarity to get attention weight
+            weight = F.cosine_similarity(target_ht, claim_ht, dim=2)  # (B, S)
             soft_weight = F.softmax(weight, dim=1)  # (B, S)
 
         # get final representation
@@ -157,24 +135,32 @@ class Linear(torch.nn.Module):
         # get input dimension
         input_dim = config.task_hidden_dim * 2 + config.shared_hidden_dim * 2
 
-        # get output dimension
+        # get linear and output dimension
         if task_id == 0:  # stance detection
+            linear_dim = config.stance_linear_dim
             output_dim = config.stance_output_dim
         elif task_id == 1:  # NLI
+            linear_dim = config.nli_linear_dim
             output_dim = config.nli_output_dim
 
         # linear layer
         linear = [nn.Linear(in_features=input_dim,
-                            out_features=output_dim)]
+                            out_features=linear_dim)]
 
-        for _ in range(int(config.num_linear_layers)-1):
-            linear.append(nn.Dropout(config.dropout))
-            linear.append(nn.Linear(in_features=output_dim,
-                                    out_features=output_dim))
+        for _ in range(config.num_linear_layers-2):
+            linear.append(nn.ReLU())
+            linear.append(nn.Dropout(config.linear_dropout))
+            linear.append(nn.Linear(in_features=linear_dim,
+                                    out_features=linear_dim))
 
-        self.linear_layer = nn.Sequential(*linear)
+        linear.append(nn.ReLU())
+        linear.append(nn.Dropout(config.linear_dropout))
+        linear.append(nn.Linear(in_features=linear_dim,
+                                out_features=output_dim))
 
-    def forward(self, batch_x):
-        batch_x = self.linear_layer(batch_x)
+        self.linear = nn.Sequential(*linear)
 
-        return batch_x
+    def forward(self, task_r):
+        task_r = self.linear_layer(task_r)
+
+        return task_r

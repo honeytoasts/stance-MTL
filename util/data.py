@@ -165,6 +165,7 @@ def load_lexicon(lexicon=None):
     raise ValueError(f'lexicon {lexicon} does not support')
 
 class MultiTaskBatchSampler(torch.utils.data.BatchSampler):
+    # reference: https://github.com/namisan/mt-dnn/blob/master/mt_dnn/batcher.py
     def __init__(self, datasets, batch_size, random_seed):
         self.datasets = datasets
         self.batch_size = batch_size
@@ -223,6 +224,25 @@ class MultiTaskBatchSampler(torch.utils.data.BatchSampler):
             batch = next(all_iters[task_id])
             yield [(task_id, data_id) for data_id in batch]
 
+class MultiTaskDataset(torch.utils.data.Dataset):
+    # reference: https://github.com/namisan/mt-dnn/blob/master/mt_dnn/batcher.py
+    def __init__(self, datasets):
+        self.datasets = datasets
+        task_id_to_dataset = {}
+
+        for dataset in datasets:
+            task_id = dataset.task_id
+            task_id_to_dataset[task_id] = dataset
+
+        self.task_id_to_dataset = task_id_to_dataset
+
+    def __len__(self):
+        return sum([len(dataset) for dataset in self.datasets])
+
+    def __getitem__(self, index):
+        task_id, data_id = index
+        return self.task_id_to_dataset[task_id][data_id]
+
 class SingleTaskDataset(torch.utils.data.Dataset):
     def __init__(self, task_id,
                  target_encode, claim_encode,
@@ -257,27 +277,9 @@ class SingleTaskDataset(torch.utils.data.Dataset):
                                              batch_first=True,
                                              padding_value=pad_token_id)
 
-        # pad lexicon to fixed length with value "0.0"
+        # pad lexicon to fixed length with value 0.0
         lexicon = torch.nn.utils.rnn.pad_sequence(lexicon,
                                                   batch_first=True,
                                                   padding_value=0.0)
 
         return task_id, x1, x2, lexicon, y
-
-class MultiTaskDataset(torch.utils.data.Dataset):
-    def __init__(self, datasets):
-        self.datasets = datasets
-        task_id_to_dataset = {}
-
-        for dataset in datasets:
-            task_id = dataset.task_id
-            task_id_to_dataset[task_id] = dataset
-
-        self.task_id_to_dataset = task_id_to_dataset
-
-    def __len__(self):
-        return sum([len(dataset) for dataset in self.datasets])
-
-    def __getitem__(self, index):
-        task_id, data_id = index
-        return self.task_id_to_dataset[task_id][data_id]

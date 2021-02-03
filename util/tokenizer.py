@@ -160,17 +160,19 @@ class BaseTokenizer:
 
         for i in range(len(sentences)):
             # add bos token id at the front
-            sentence = [self.bos_token_id] + sentences[i]
+            # sentence = [self.bos_token_id] + sentences[i]
+            sentence = sentences[i]
 
             # cut off sentence
             sentence = sentence[:self.config.max_seq_len]
 
             # padding if sentence length < max sequence length
-            pad_count = self.config.max_seq_len - len(sentence)
-            sentence.extend([self.pad_token_id] * pad_count)
+            if self.config.padding:
+                pad_count = self.config.max_seq_len - len(sentence)
+                sentence.extend([self.pad_token_id] * pad_count)
 
             # replace last token with eos token id
-            sentence[-1] = self.eos_token_id
+            # sentence[-1] = self.eos_token_id
 
             sentences[i] = sentence
 
@@ -203,10 +205,7 @@ class BaseTokenizer:
             self.token_to_id = tokenizer.token_to_id
             self.id_to_token = tokenizer.id_to_token
             self.all_tokens = tokenizer.all_tokens
-            try:
-                self.lexicon_dict = tokenizer.lexicon_dict
-            except:
-                pass
+            self.lexicon_dict = tokenizer.lexicon_dict
 
     def save(self, file_path=None):
         if file_path is None or type(file_path) != str:
@@ -222,6 +221,20 @@ class WordPunctTokenizer(BaseTokenizer):
     def tokenize(self, sentences):
         # nltk WordPunctTokenizer
         tokenizer = tokenize.WordPunctTokenizer()
+        sentences = [tokenizer.tokenize(sentence) for sentence in sentences]
+
+        # filter stopwords
+        sentences = self.filter_stopwords(sentences)
+
+        return sentences
+
+class TweetTokenizer(BaseTokenizer):
+    def __init__(self, config):
+        super(TweetTokenizer, self).__init__(config)
+
+    def tokenize(self, sentences):
+        # nltk TweetTokenizer
+        tokenizer = tokenize.TweetTokenizer()
         sentences = [tokenizer.tokenize(sentence) for sentence in sentences]
 
         # filter stopwords
