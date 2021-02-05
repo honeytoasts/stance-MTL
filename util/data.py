@@ -244,11 +244,12 @@ class MultiTaskDataset(torch.utils.data.Dataset):
         return self.task_id_to_dataset[task_id][data_id]
 
 class SingleTaskDataset(torch.utils.data.Dataset):
-    def __init__(self, task_id,
+    def __init__(self, task_id, target_name,
                  target_encode, claim_encode,
                  claim_lexicon, label_encode):
         # 0 for stance detection and 1 for NLI
         self.task_id = task_id
+        self.target_name = target_name.reset_index(drop=True)
         self.x1 = [torch.LongTensor(ids) for ids in target_encode]
         self.x2 = [torch.LongTensor(ids) for ids in claim_encode]
         self.lexicon = [torch.FloatTensor(ids) for ids in claim_lexicon]
@@ -258,16 +259,18 @@ class SingleTaskDataset(torch.utils.data.Dataset):
         return len(self.x1)
 
     def __getitem__(self, index):
-        return (self.task_id, self.x1[index], self.x2[index],
+        return (self.task_id, self.target_name[index],
+                self.x1[index], self.x2[index],
                 self.lexicon[index], self.y[index])
 
     @staticmethod
     def collate_fn(batch, pad_token_id=0):
         task_id = batch[0][0]
-        x1 = [data[1] for data in batch]
-        x2 = [data[2] for data in batch]
-        lexicon = [data[3] for data in batch]
-        y = torch.LongTensor([data[4] for data in batch])
+        target_name = [data[1] for data in batch]
+        x1 = [data[2] for data in batch]
+        x2 = [data[3] for data in batch]
+        lexicon = [data[4] for data in batch]
+        y = torch.LongTensor([data[5] for data in batch])
 
         # pad sequence to fixed length with pad_token_id
         x1 = torch.nn.utils.rnn.pad_sequence(x1,
@@ -282,4 +285,4 @@ class SingleTaskDataset(torch.utils.data.Dataset):
                                                   batch_first=True,
                                                   padding_value=0.0)
 
-        return task_id, x1, x2, lexicon, y
+        return task_id, target_name, x1, x2, lexicon, y

@@ -75,7 +75,7 @@ class TSBiLSTM(torch.nn.Module):
                            'batch_first': True,
                            'bidirectional': True}
         if int(config.num_rnn_layers) > 1:
-            claim_parameter['dropout'] = config.dropout
+            claim_parameter['dropout'] = config.rnn_dropout
 
         # target BiLSTM
         self.target_BiLSTM = nn.LSTM(**target_parameter)
@@ -161,6 +161,6 @@ class Linear(torch.nn.Module):
         self.linear = nn.Sequential(*linear)
 
     def forward(self, task_r):
-        task_r = self.linear_layer(task_r)
+        task_r = self.linear(task_r)
 
         return task_r

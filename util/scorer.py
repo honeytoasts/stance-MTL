@@ -30,7 +30,7 @@ def semeval_score(targets, label_y, pred_y):
                                 labels=consider_labels,
                                 zero_division=0)
 
-    return (target_f1, macro_f1.item(), micro_f1.item())
+    return (target_f1, macro_f1, micro_f1.item())
 
 def fnc_score(label_y, pred_y):
     # specfiy related label
