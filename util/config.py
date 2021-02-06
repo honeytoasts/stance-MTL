@@ -30,8 +30,8 @@ def parse_args():
                         default=20,
                         type=int)
     parser.add_argument('--padding',
-                        default=False,
-                        type=bool)
+                        default=0,
+                        type=int)
 
     # dataset and lexicon
     parser.add_argument('--stance_dataset',
