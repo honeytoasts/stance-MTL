@@ -81,7 +81,7 @@ def evaluate_function(device, model, config, batch_iterator):
     # evaluate accuracy
     if config.stance_dataset == 'semeval2016':
         stance_score = \
-            scorer.semeval_score(targets=pd.Series(all_stance_target),
+            scorer.semeval_score(targets=all_stance_target,
                                  label_y=all_stance_label,
                                  pred_y=all_stance_pred)
     elif config.stance_dataset == 'fnc-1':

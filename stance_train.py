@@ -92,7 +92,7 @@ def main():
     # build vocabulary dictionary
     tokenizer.build_dict(embedding.word_dict)
 
-    # encode content to id
+    # content encode
     stance_data_df['target_encode'] = \
         tokenizer.encode(stance_data_df['target'].tolist())
     stance_data_df['claim_encode'] = \
@@ -209,9 +209,9 @@ def main():
 
     # construct model, optimizer and scheduler
     model = util.model.BaseModel(config=config,
-                                num_embeddings=embedding.get_num_embeddings(),
-                                padding_idx=tokenizer.pad_token_id,
-                                embedding_weight=embedding.vector)
+                                 num_embeddings=embedding.get_num_embeddings(),
+                                 padding_idx=tokenizer.pad_token_id,
+                                 embedding_weight=embedding.vector)
     model = model.to(device)
 
     optimizer = torch.optim.Adam(params=model.parameters(),

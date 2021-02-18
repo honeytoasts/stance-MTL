@@ -10,13 +10,14 @@ def semeval_score(targets, label_y, pred_y):
                    'feminist movement', 'hillary clinton',
                    'legalization of abortion']
 
-    label_series, pred_series = pd.Series(label_y), pd.Series(pred_y)
+    target_series, label_series, pred_series = \
+        pd.Series(targets), pd.Series(label_y), pd.Series(pred_y)
     target_f1 = []
 
     # get f1-score for each target
     for target in target_name:
-        labels = label_series[targets == target].tolist()
-        preds = pred_series[targets == target].tolist()
+        labels = label_series[target_series == target].tolist()
+        preds = pred_series[target_series == target].tolist()
         f1 = metrics.f1_score(labels, preds,
                               average='macro', labels=consider_labels)
 
