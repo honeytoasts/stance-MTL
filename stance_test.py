@@ -25,7 +25,7 @@ import scorer
 experiment_no = 3
 fold = 1
 epoch = 11
-model_path = f'model/{experiment_no}/'
+model_path = f'model_v1.0/{experiment_no}'
 
 # initialize device
 device = torch.device('cpu')
