@@ -16,9 +16,9 @@ import sklearn
 import util
 
 # parameter and model path setting
-experiment_no = 43
-epoch = 19
-model_path = f'model/{experiment_no}/'
+experiment_no = 7
+epoch = 21
+model_path = f'model_v1.1/{experiment_no}'
 
 # load config, tokenizer, embedding
 config = util.config.BaseConfig()
