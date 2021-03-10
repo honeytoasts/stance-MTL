@@ -17,6 +17,15 @@ def preprocessing(data):
 
     return data
 
+def preprocessing_text(text):
+    # encoding normalize
+    text = unicodedata.normalize('NFKC', str(text))
+
+    # change to lowercase
+    text = text.lower().strip()
+
+    return text
+
 def convert_to_dataframe(data):
     target = [row[0] for row in data]
     claim = [row[1] for row in data]
@@ -26,6 +35,36 @@ def convert_to_dataframe(data):
 
     return data_df
 
+def load_dataset_semeval2016_origin(split='train'):
+    # file path
+    if split == 'train':
+        file_path = [
+            '../data/semeval2016/semeval2016-task6-trialdata.txt',
+            '../data/semeval2016/semeval2016-task6-trainingdata.txt'
+        ]
+    elif split == 'test':
+        file_path = [
+            '../data/semeval2016/SemEval2016-Task6-subtaskA-testdata-gold.txt'
+        ]
+
+    # read data
+    data_df = pd.DataFrame()
+    for data in file_path:
+        with open(data, 'r', encoding='windows-1252') as f:
+            temp_df = pd.read_csv(f, sep='\t')
+            data_df = pd.concat([data_df, temp_df])
+
+    # change columns name
+    data_df.columns = ['ID', 'target', 'claim', 'label']
+
+    # preprocessing
+    data_df['target_pre'] = data_df['target'].apply(
+        lambda text: preprocessing_text(text))
+    data_df['claim_pre'] = data_df['claim'].apply(
+        lambda text: preprocessing_text(text))
+
+    return data_df
+    
 def load_dataset_semeval2016(split='train'):
     # file path
     if split == 'train':
