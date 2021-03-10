@@ -23,12 +23,51 @@ def preprocessing(pattern, data):
 
     return data
 
+def preprocessing_text(text):
+    # encoding normalize
+    text = unicodedata.normalize('NFKC', str(text))
+
+    # change to lowercase
+    text = text.lower().strip()
+
+    return text
+
 def convert_to_dataframe(data):
     target = [row[0] for row in data]
     claim = [row[1] for row in data]
     label = [row[2] for row in data]
 
     data_df = pd.DataFrame({'target': target, 'claim': claim, 'label': label})
+
+    return data_df
+
+def load_dataset_semeval2016_origin(split='train'):
+    # file path
+    if split == 'train':
+        file_path = [
+            '../data/semeval2016/semeval2016-task6-trialdata.txt',
+            '../data/semeval2016/semeval2016-task6-trainingdata.txt'
+        ]
+    elif split == 'test':
+        file_path = [
+            '../data/semeval2016/SemEval2016-Task6-subtaskA-testdata-gold.txt'
+        ]
+
+    # read data
+    data_df = pd.DataFrame()
+    for data in file_path:
+        with open(data, 'r', encoding='windows-1252') as f:
+            temp_df = pd.read_csv(f, sep='\t')
+            data_df = pd.concat([data_df, temp_df])
+
+    # change columns name
+    data_df.columns = ['ID', 'target', 'claim', 'label']
+
+    # preprocessing
+    data_df['target_pre'] = data_df['target'].apply(
+        lambda text: preprocessing_text(text))
+    data_df['claim_pre'] = data_df['claim'].apply(
+        lambda text: preprocessing_text(text))
 
     return data_df
 
@@ -143,10 +182,14 @@ def load_dataset(dataset=None):
 
     raise ValueError(f'dataset {dataset} does not support')
 
-def load_lexicon_emolex(types='emotion'):
+def load_lexicon_emolex(types='emotion', analysis=False):
     # file path
-    file_path = ('data/emolex/'
-                 'NRC-Emotion-Lexicon-Wordlevel-v0.92.txt')
+    if not analysis:
+        file_path = ('data/emolex/'
+                     'NRC-Emotion-Lexicon-Wordlevel-v0.92.txt')
+    else:
+        file_path = ('../data/emolex/'
+                     'NRC-Emotion-Lexicon-Wordlevel-v0.92.txt')
 
     # read data
     lexicons = []
@@ -165,12 +208,12 @@ def load_lexicon_emolex(types='emotion'):
 
     return lexicons
 
-def load_lexicon(lexicon=None):
+def load_lexicon(lexicon=None, analysis=False):
     # load lexicon by passed parameter
     if lexicon == 'emolex_emotion':
-        return load_lexicon_emolex(types='emotion')
+        return load_lexicon_emolex(types='emotion', analysis=analysis)
     elif lexicon == 'emolex_sentiment':
-        return load_lexicon_emolex(types='sentiment')
+        return load_lexicon_emolex(types='sentiment', analysis=analysis)
 
     raise ValueError(f'lexicon {lexicon} does not support')
 
