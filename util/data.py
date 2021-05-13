@@ -1,288 +1,182 @@
 # built-in module
+import argparse
 import unicodedata
-import random
+import re
+import gc
 
 # 3rd-party module
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import torch
 
-def preprocessing(data):
-    # encoding normalize
-    data = [[unicodedata.normalize('NFKC', str(column))
-             for column in row] for row in data]
+# self-made module
+from . import config
+from . import tokenizer
+from . import embedding
 
-    # change to lowercase
-    data = [[column.lower().strip() for column in row] for row in data]
+class MultiData:
+    def __init__(self,
+                 training: bool,
+                 stance_target: str,
+                 config: argparse.Namespace,
+                 tokenizer: tokenizer.BaseTokenizer,
+                 embedding: embedding.BaseEmbedding):
 
-    return data
+        # initialize dataframe
+        data_df = pd.DataFrame(
+            columns=['task_id', 'is_train', 'target_orig', 'claim_orig', 'label'])
 
-def convert_to_dataframe(data):
-    target = [row[0] for row in data]
-    claim = [row[1] for row in data]
-    label = [row[2] for row in data]
+        # load data
+        stance_df = self.load_stance_data(stance_target)
+        nli_df = self.load_nli_data()
+        data_df = pd.concat([data_df, stance_df, nli_df])
 
-    data_df = pd.DataFrame({'target': target, 'claim': claim, 'label': label})
+        self.data = data_df
 
-    return data_df
+        # data preprocessing
+        self.preprocessing()
 
-def load_dataset_semeval2016(split='train'):
-    # file path
-    if split == 'train':
-        file_path = ('data/semeval2016/'
-                     'semeval2016-task6-trainingdata.txt')
-        file_path2 = ('data/semeval2016/'
-                      'semeval2016-task6-trialdata.txt')
-    elif split == 'test':
-        file_path = ('data/semeval2016/'
-                     'SemEval2016-Task6-subtaskA-testdata-gold.txt')
+        # if training then init tokenizer and embedding
+        if training:
+            # build vocabulary
+            all_sentences = []
+            all_sentences.extend(self.data['target'].tolist())
+            all_sentences.extend(self.data['claim'].tolist())
 
-    # read data
-    data = []
-    with open(file_path, 'r', encoding='windows-1252') as f:
-        for row in tqdm(f.readlines()[1:],
-                        desc=f'loading SemEval2016 {split}ing data'):
-            _, target, claim, stance = row.split('\t')
-            data.append([target, claim, stance])
+            all_task_ids = []
+            all_task_ids.extend(self.data['task_id'].tolist())
 
-    # read train data for another file
-    if split == 'train':
-        with open(file_path2, 'r', encoding='windows-1252') as f:
-            for row in f.readlines()[1:]:
-                _, target, claim, stance = row.split('\t')
-                data.append([target, claim, stance])
+            tokenizer.build_vocabulary(all_sentences, all_task_ids)
 
-    # preprocessing
-    data = preprocessing(data)
+            # get embeddings
+            if 'fasttext' in config.embedding:
+                embedding.load_fasttext_embedding(
+                    id_to_token=tokenizer.id_to_token)
+            else:
+                embedding.load_file_embedding(
+                    id_to_token=tokenizer.id_to_token)
 
-    # convert to dataframe
-    data_df = convert_to_dataframe(data)
+        # content encode
+        self.data['target_encode'] = tokenizer.encode(
+            sentences=self.data['target'].tolist(),
+            task_ids=self.data['task_id'])
+        self.data['claim_encode'] = tokenizer.encode(
+            sentences=self.data['claim'].tolist(),
+            task_ids=self.data['task_id'])
 
-    return data_df  # target, claim, stance
+        # label encode
+        label_to_id = {'favor': 0, 'against': 1, 'none': 2,
+                 'entailment': 0, 'contradiction': 1, 'neutral': 2}
+        self.data['label_encode'] = self.data['label'].apply(
+            lambda label: label_to_id[label])
 
-def load_dataset_fnc(split='train'):
-    # file path
-    if split == 'train':
-        target_path = 'data/fnc-1/train_stances.csv'
-        claim_path = 'data/fnc-1/train_bodies.csv'
-    elif split == 'test':
-        target_path = 'data/fnc-1/competition_test_stances.csv'
-        claim_path = 'data/fnc-1/competition_test_bodies.csv'
+        # separate two dataset
+        self.stance_train_df = self.data[(self.data['task_id'] == 0) &
+                                         (self.data['is_train'] == True)]
+        self.stance_test_df = self.data[(self.data['task_id'] == 0) &
+                                        (self.data['is_train'] == False)]
+        self.nli_train_df = self.data[(self.data['task_id'] == 1) &
+                                      (self.data['is_train'] == True)]
+        self.nli_test_df = self.data[(self.data['task_id'] == 1) &
+                                     (self.data['is_train'] == False)]
 
-    # read data
-    data = []
-    target_df = pd.read_csv(target_path)
-    claim_df = pd.read_csv(claim_path)
+        # reset index
+        self.stance_train_df = self.stance_train_df.reset_index(drop=True)
+        self.stance_test_df = self.stance_test_df.reset_index(drop=True)
+        self.nli_train_df = self.nli_train_df.reset_index(drop=True)
+        self.nli_test_df = self.nli_test_df.reset_index(drop=True)
+        
+    def load_stance_data(self, target):
+        # load SemEval data
+        file_paths = [
+            'data/semeval2016/semeval2016-task6-trialdata.txt',
+            'data/semeval2016/semeval2016-task6-trainingdata.txt',
+            'data/semeval2016/SemEval2016-Task6-subtaskA-testdata-gold.txt']
 
-    for _, row in tqdm(target_df.iterrows(), 
-                       desc=f'loading FNC-1 {split}ing data',
-                       total=len(target_df)):
-        claim = claim_df.loc[claim_df['Body ID'] == row['Body ID'], 
-                             'articleBody'].tolist()[0]
-        data.append([row['Headline'], claim, row['Stance']])
+        stance_df = pd.DataFrame()
+        for file_path in file_paths:
+            temp_df = pd.read_csv(file_path, encoding='windows-1252', delimiter='\t')
+            stance_df = pd.concat([stance_df, temp_df])
+        stance_df.columns = ['ID', 'target_orig', 'claim_orig', 'label']
 
-    # preprocessing
-    data = preprocessing(data)
+        # add task_id and is_train column
+        stance_df['is_train'] = stance_df['ID'].apply(
+            lambda idx: True if int(idx) < 10000 else False)
+        stance_df['task_id'] = [0] * len(stance_df)
+        stance_df = stance_df[['task_id', 'is_train',
+                               'target_orig', 'claim_orig', 'label']]
 
-    # convert to dataframe
-    data_df = convert_to_dataframe(data)
+        # get specific target data
+        if target != 'all':
+            stance_df = stance_df[stance_df['target_orig'] == target]
 
-    return data_df  # target, claim, stance
+        return stance_df
 
-def load_dataset_mnli(split='train'):
-    # file path
-    if split == 'train':
-        file_path = ('data/multinli/'
-                     'multinli_1.0_train.txt')
-    elif split == 'test':
-        file_path = ('data/multinli/'
-                     'multinli_1.0_dev_matched.txt')
+    def load_nli_data(self):
+        # load MNLI data
+        file_paths = [
+            'data/multinli/multinli_1.0_train.jsonl',
+            'data/multinli/multinli_1.0_dev_matched.jsonl']
 
-    # read data
-    data = []
-    with open(file_path, 'r') as f:
-        for row in tqdm(f.readlines()[1:], 
-                        desc=f'loading MultiNLI {split}ing data'):
-            row = row.split('\t')
-            data.append([row[5], row[6], row[0]])
+        nli_df = pd.DataFrame()
+        for idx, file_path in enumerate(file_paths):
+            temp_df = pd.read_json(file_path, lines=True)
+            temp_df = temp_df[['sentence1', 'sentence2', 'gold_label']]
+            temp_df['is_train'] = [True if not idx else False] * len(temp_df)
+            nli_df = pd.concat([nli_df, temp_df])
+        nli_df.columns = ['target_orig', 'claim_orig', 'label', 'is_train']
 
-    # preprocessing
-    data = preprocessing(data)
+        # add task_id column
+        nli_df['task_id'] = [1] * len(nli_df)
+        nli_df = nli_df[['task_id', 'is_train',
+                         'target_orig', 'claim_orig', 'label']]
 
-    # convert to dataframe
-    data_df = convert_to_dataframe(data)
+        # remove the data which label is '-'
+        nli_df = nli_df[nli_df['label'] != '-']
 
-    return data_df  # premise, hypothesis, label
+        return nli_df
 
-def load_dataset(dataset=None):
-    # load dataset by passed parameter
-    if dataset == 'semeval2016_train':
-        return load_dataset_semeval2016(split='train')
-    elif dataset == 'semeval2016_test':
-        return load_dataset_semeval2016(split='test')
+    def preprocessing(self):
+        # encoding normalize
+        normalize_func = (
+            lambda text: unicodedata.normalize('NFKC', str(text)))
 
-    if dataset == 'fnc_train':
-        return load_dataset_fnc(split='train')
-    elif dataset == 'fnc_test':
-        return load_dataset_fnc(split='test')
+        self.data['target'] = self.data['target_orig'].apply(normalize_func)
+        self.data['claim'] = self.data['claim_orig'].apply(normalize_func)
+        self.data['label'] = self.data['label'].apply(normalize_func)
 
-    if dataset == 'mnli_train':
-        return load_dataset_mnli(split='train')
-    elif dataset == 'mnli_test':
-        return load_dataset_mnli(split='test')
+        # tweet preprocessing
+        self.data['claim'] = self.data['claim'].apply(
+            self.tweet_preprocessing)
 
-    raise ValueError(f'dataset {dataset} does not support')
+        # change to lower case
+        lower_func = lambda text: text.lower().strip()
 
-def load_lexicon_emolex(types='emotion'):
-    # file path
-    file_path = ('data/emolex/'
-                 'NRC-Emotion-Lexicon-Wordlevel-v0.92.txt')
+        self.data['target'] = self.data['target'].apply(lower_func)
+        self.data['claim'] = self.data['claim'].apply(lower_func)
+        self.data['label'] = self.data['label'].apply(lower_func)
 
-    # read data
-    lexicons = []
-    with open(file_path, 'r') as f:
-        for row in tqdm(f.readlines()[1:], 
-                        desc=f'loading EmoLex lexicon data'):
-            word, emotion, value = row.split('\t')
-            if types == 'emotion':
-                if emotion not in ['negative', 'positive'] and int(value) == 1:
-                    lexicons.append(word.strip())
-            elif types == 'sentiment':
-                if emotion in ['negative', 'positive'] and int(value) == 1:
-                    lexicons.append(word.strip())
+    def tweet_preprocessing(self, text):
+        # reference: https://github.com/zhouyiwei/tsd/blob/master/utils.py
 
-    lexicons = list(set(lexicons))
+        text = text.replace('#SemST', '').strip()
 
-    return lexicons
+        text = re.sub(r"https?:\/\/\S+\b|www\.(\w+\.)+\S*", "<URL>", text)
+        text = re.sub(r"@\w+", "<USER>", text)
+        text = re.sub(r"[8:=;]['`\-]?[)d]+|[)d]+['`\-]?[8:=;]", "<SMILE>", text)
+        text = re.sub(r"[8:=;]['`\-]?p+", "<LOLFACE>", text)
+        text = re.sub(r"[8:=;]['`\-]?\(+|\)+['`\-]?[8:=;]", "<SADFACE>", text)
+        text = re.sub(r"[8:=;]['`\-]?[\/|l*]", "<NEUTRALFACE>", text)
+        text = re.sub(r"<3","<HEART>", text)
+        text = re.sub(r"/"," / ", text)
+        text = re.sub(r"[-+]?[.\d]*[\d]+[:,.\d]*", "<NUMBER>", text)
+        p = re.compile(r"#\S+")
+        text = p.sub(lambda s: "<HASHTAG> "+s.group()[1:]+" <ALLCAPS>"
+                     if s.group()[1:].isupper()
+                     else " ".join(["<HASHTAG>"]+re.split(r"([A-Z][^A-Z]*)",
+                                   s.group()[1:])),text)
+        text = re.sub(r"([!?.]){2,}", r"\1 <REPEAT>", text)
+        text = re.sub(r"\b(\S*?)(.)\2{2,}\b", r"\1\2 <ELONG>", text)
 
-def load_lexicon(lexicon=None):
-    # load lexicon by passed parameter
-    if lexicon == 'emolex_emotion':
-        return load_lexicon_emolex(types='emotion')
-    elif lexicon == 'emolex_sentiment':
-        return load_lexicon_emolex(types='sentiment')
-
-    raise ValueError(f'lexicon {lexicon} does not support')
-
-class MultiTaskBatchSampler(torch.utils.data.BatchSampler):
-    # reference: https://github.com/namisan/mt-dnn/blob/master/mt_dnn/batcher.py
-    def __init__(self, datasets, batch_size, random_seed):
-        self.datasets = datasets
-        self.batch_size = batch_size
-        self.random_seed = random_seed
-
-        data_batch_index_list = []
-        for dataset in datasets:
-            data_batch_index_list.append(
-                self.get_shuffled_batch_index(len(dataset), batch_size))
-
-        self.data_batch_index_list = data_batch_index_list
-
-    @staticmethod
-    def get_shuffled_batch_index(dataset_len, batch_size):
-        # get all index and shuffle them
-        index_list = list(range(dataset_len))
-        random.shuffle(index_list)
-
-        # get batch index
-        batches_index = []
-
-        for i in range(0, dataset_len, batch_size):
-            batch_index = []
-            for j in range(i, min(i+batch_size, dataset_len)):
-                batch_index.append(index_list[j])
-            batches_index.append(batch_index)
-
-        # shuffle batch index
-        random.shuffle(batches_index)
-
-        return batches_index
-
-    @staticmethod
-    def get_task_indices(data_batch_index_list, random_seed):
-        all_indices = []
-
-        for task_id, dataset in enumerate(data_batch_index_list):
-            all_indices += [task_id]*len(dataset)
-
-        # shuffle task indices
-        random.seed(random_seed)  # set random seed
-        random.shuffle(all_indices)
-
-        return all_indices
-
-    def __len__(self):
-        return sum(len(data) for data in self.data_batch_index_list)
-
-    def __iter__(self):
-        all_iters = [iter(task_data)
-                     for task_data in self.data_batch_index_list]
-        all_task_indices = self.get_task_indices(self.data_batch_index_list,
-                                                 self.random_seed)
-
-        for task_id in all_task_indices:
-            batch = next(all_iters[task_id])
-            yield [(task_id, data_id) for data_id in batch]
-
-class MultiTaskDataset(torch.utils.data.Dataset):
-    # reference: https://github.com/namisan/mt-dnn/blob/master/mt_dnn/batcher.py
-    def __init__(self, datasets):
-        self.datasets = datasets
-        task_id_to_dataset = {}
-
-        for dataset in datasets:
-            task_id = dataset.task_id
-            task_id_to_dataset[task_id] = dataset
-
-        self.task_id_to_dataset = task_id_to_dataset
-
-    def __len__(self):
-        return sum([len(dataset) for dataset in self.datasets])
-
-    def __getitem__(self, index):
-        task_id, data_id = index
-        return self.task_id_to_dataset[task_id][data_id]
-
-class SingleTaskDataset(torch.utils.data.Dataset):
-    def __init__(self, task_id, target_name,
-                 target_encode, claim_encode,
-                 claim_lexicon, label_encode):
-        # 0 for stance detection and 1 for NLI
-        self.task_id = task_id
-        self.target_name = target_name.reset_index(drop=True)
-        self.x1 = [torch.LongTensor(ids) for ids in target_encode]
-        self.x2 = [torch.LongTensor(ids) for ids in claim_encode]
-        self.lexicon = [torch.FloatTensor(ids) for ids in claim_lexicon]
-        self.y = torch.LongTensor([label for label in label_encode])
-
-    def __len__(self):
-        return len(self.x1)
-
-    def __getitem__(self, index):
-        return (self.task_id, self.target_name[index],
-                self.x1[index], self.x2[index],
-                self.lexicon[index], self.y[index])
-
-    @staticmethod
-    def collate_fn(batch, pad_token_id=0):
-        task_id = batch[0][0]
-        target_name = [data[1] for data in batch]
-        x1 = [data[2] for data in batch]
-        x2 = [data[3] for data in batch]
-        lexicon = [data[4] for data in batch]
-        y = torch.LongTensor([data[5] for data in batch])
-
-        # pad sequence to fixed length with pad_token_id
-        x1 = torch.nn.utils.rnn.pad_sequence(x1,
-                                             batch_first=True,
-                                             padding_value=pad_token_id)
-        x2 = torch.nn.utils.rnn.pad_sequence(x2,
-                                             batch_first=True,
-                                             padding_value=pad_token_id)
-
-        # pad lexicon to fixed length with value 0.0
-        lexicon = torch.nn.utils.rnn.pad_sequence(lexicon,
-                                                  batch_first=True,
-                                                  padding_value=0.0)
-
-        return task_id, target_name, x1, x2, lexicon, y
+        return text
