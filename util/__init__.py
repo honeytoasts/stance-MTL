@@ -1,5 +1,4 @@
 from util import config
-from util import custom_lstms
 from util import data
 from util import embedding
 from util import evaluate

@@ -1,157 +1,101 @@
 # 3rd-party module
+import argparse
 import torch
-import pandas as pd
 
 # self-made module
+from util import model
 from util import loss
 from util import scorer
 
-def evaluate_function(device, model, config, batch_iterator):
-    total_loss, total_lexicon_loss = 0.0, 0.0
-    stance_loss, stance_lexicon_loss = 0.0, 0.0
-    nli_loss, nli_lexicon_loss = 0.0, 0.0
+@torch.no_grad()
+def evaluate_function(device: torch.device,
+                      model,
+                      config: argparse.Namespace,
+                      batch_iterator,
+                      evaluate_nli=True):
 
-    stance_batch_count, nli_batch_count = 0, 0
+    total_loss, stance_loss, nli_loss = 0.0, 0.0, 0.0
+
     all_stance_target = []
     all_stance_label, all_nli_label = [], []
     all_stance_pred, all_nli_pred = [], []
 
     # evaluate model
     model.eval()
-    with torch.no_grad():
-        for task_id, target_name, \
-            x1, x2, lexicon, y in batch_iterator:
-            # specify device for data
-            x1 = x1.to(device)
-            x2 = x2.to(device)
-            lexicon = lexicon.to(device)
-            y = y.to(device)
+    for (task_id, target_name,
+         task_target, shared_target,
+         task_claim, shared_claim,
+         task_attn_mask, shared_attn_mask,
+         task_adj_matrix, shared_adj_matrix,
+         label) in batch_iterator:
 
-            # get predict label and attention weight
-            pred_y, task_weight, shared_weight = \
-                model(task_id, x1, x2)
+        # check whether the stance data or not
+        if not evaluate_nli and task_id == 1:
+            continue
 
-            # calculate loss
-            batch_loss, batch_lexicon_loss = \
-                loss.loss_function(
-                    task_id=task_id,
-                    predict=pred_y,
-                    target=y,
-                    lexicon_vector=lexicon,
-                    task_weight=task_weight,
-                    shared_weight=shared_weight,
-                    nli_loss_weight=config.nli_loss_weight,
-                    lexicon_loss_weight=config.lexicon_loss_weight)
+        # specify device for data
+        task_target = task_target.to(device)
+        shared_target = shared_target.to(device)
+        task_claim = task_claim.to(device)
+        shared_claim = shared_claim.to(device)
+        task_attn_mask = task_attn_mask.to(device)
+        shared_attn_mask = shared_attn_mask.to(device)
+        task_adj_matrix = task_adj_matrix.to(device)
+        shared_adj_matrix = shared_adj_matrix.to(device)
+        label = label.to(device)
 
-            # sum the batch loss
-            total_loss += batch_loss
-            total_lexicon_loss += batch_lexicon_loss
+        # get predict label
+        predict, _ = model(task_id,
+                           task_target, shared_target,
+                           task_claim, shared_claim,
+                           task_attn_mask, shared_attn_mask,
+                           task_adj_matrix, shared_adj_matrix)
 
-            # get target, label and predict
-            if task_id == 0:  # for stance detection
-                stance_loss += batch_loss
-                stance_lexicon_loss += batch_lexicon_loss
-                stance_batch_count += 1
+        # calculate loss
+        batch_loss = (
+            loss.loss_function(task_id=task_id,
+                               predict=predict,
+                               target=label,
+                               nli_loss_weight=config.nli_loss_weight))
 
-                all_stance_target.extend(target_name)
-                all_stance_pred.extend(
-                    torch.argmax(pred_y, axis=1).cpu().tolist())
-                all_stance_label.extend(y.tolist())
-            elif task_id == 1:  # for NLI
-                nli_loss += batch_loss
-                nli_lexicon_loss += batch_lexicon_loss
-                nli_batch_count += 1
+        # sum the batch loss
+        total_loss += batch_loss * len(label)
+        if task_id == 0:
+            stance_loss += batch_loss * len(label)
+        elif task_id == 1:
+            nli_loss += batch_loss * len(label)
 
-                all_nli_pred.extend(
-                    torch.argmax(pred_y, axis=1).cpu().tolist())
-                all_nli_label.extend(y.tolist())
-
-    # check batch count
-    assert len(batch_iterator) == \
-        stance_batch_count + nli_batch_count
-
-    # evaluate loss
-    total_loss = total_loss / len(batch_iterator)
-    total_lexicon_loss = total_lexicon_loss / len(batch_iterator)
-    stance_loss = stance_loss / stance_batch_count
-    stance_lexicon_loss = stance_lexicon_loss / stance_batch_count
-    nli_loss = nli_loss / nli_batch_count
-    nli_lexicon_loss = nli_lexicon_loss / nli_batch_count
-
-    # evaluate accuracy
-    if config.stance_dataset == 'semeval2016':
-        stance_score = \
-            scorer.semeval_score(targets=all_stance_target,
-                                 label_y=all_stance_label,
-                                 pred_y=all_stance_pred)
-    elif config.stance_dataset == 'fnc-1':
-        stance_score = \
-            scorer.fnc_score(label_y=all_stance_label,
-                             pred_y=all_stance_pred)
-    nli_score = scorer.nli_score(label_y=all_nli_label,
-                                 pred_y=all_nli_pred)
-
-    return (total_loss.item(), total_lexicon_loss.item(),
-            stance_loss.item(), stance_lexicon_loss.item(),
-            nli_loss.item(), nli_lexicon_loss.item(),
-            stance_score, nli_score)
-
-def stance_evaluate_function(device, model, config, batch_iterator):
-    total_loss, total_lexicon_loss = 0.0, 0.0
-    all_target = []
-    all_label, all_pred = [], []
-
-    # evaluate model
-    model.eval()
-    with torch.no_grad():
-        for task_id, target_name, \
-            x1, x2, lexicon, y in batch_iterator:
-            # specify device for data
-            x1 = x1.to(device)
-            x2 = x2.to(device)
-            lexicon = lexicon.to(device)
-            y = y.to(device)
-
-            # get predict label and attention weight
-            pred_y, task_weight, shared_weight = \
-                model(task_id, x1, x2)
-
-            # calculate loss
-            batch_loss, batch_lexicon_loss = \
-                loss.loss_function(
-                    task_id=task_id,
-                    predict=pred_y,
-                    target=y,
-                    lexicon_vector=lexicon,
-                    task_weight=task_weight,
-                    shared_weight=shared_weight,
-                    nli_loss_weight=config.nli_loss_weight,
-                    lexicon_loss_weight=config.lexicon_loss_weight)
-
-            # sum the batch loss
-            total_loss += batch_loss
-            total_lexicon_loss += batch_lexicon_loss
-
-            # get target, label and predict
-            all_target.extend(target_name)
-            all_pred.extend(
-                torch.argmax(pred_y, axis=1).cpu().tolist())
-            all_label.extend(y.tolist())
+        # get target, labeland predict
+        if task_id == 0:
+            all_stance_target.extend(target_name)
+            all_stance_pred.extend(
+                torch.argmax(predict, axis=1).cpu().tolist())
+            all_stance_label.extend(label.cpu().tolist())
+        elif task_id == 1:
+            all_nli_pred.extend(
+                torch.argmax(predict, axis=1).cpu().tolist())
+            all_nli_label.extend(label.cpu().tolist())
 
     # evaluate loss
-    total_loss = total_loss / len(batch_iterator)
-    total_lexicon_loss = total_lexicon_loss / len(batch_iterator)
+    total_loss /= (len(all_stance_label)+len(all_nli_label))
+    stance_loss /= len(all_stance_label)
+    if evaluate_nli:
+        nli_loss /= len(all_nli_label)
+    else:
+        nli_loss = torch.tensor(0.0)
 
-    # evaluate accuracy
-    if config.stance_dataset == 'semeval2016':
-        stance_score = \
-            scorer.semeval_score(targets=all_target,
-                                 label_y=all_label,
-                                 pred_y=all_pred)
-    elif config.stance_dataset == 'fnc-1':
-        stance_score = \
-            scorer.fnc_score(label_y=all_label,
-                             pred_y=all_pred)
+    # evaluate f1 score
+    target_f1, macro_f1, micro_f1 = (
+        scorer.stance_score(targets=all_stance_target,
+                            labels=all_stance_label,
+                            predicts=all_stance_pred))
+    if evaluate_nli:
+        nli_acc = (
+            scorer.nli_score(labels=all_nli_label,
+                             predicts=all_nli_pred))
+    else:
+        nli_acc = 0.0
 
-    return (total_loss.item(), total_lexicon_loss.item(),
-            stance_score)
+    return (total_loss.item(), stance_loss.item(), nli_loss.item(),
+            target_f1, macro_f1, micro_f1,
+            nli_acc)

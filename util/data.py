@@ -2,7 +2,8 @@
 import argparse
 import unicodedata
 import re
-import json
+import random
+import os
 
 # 3rd-party module
 import numpy as np
@@ -29,7 +30,7 @@ class MultiData:
             columns=['task_id', 'is_train', 'target_orig', 'claim_orig', 'label'])
 
         # load data
-        stance_df = self.load_stance_data(stance_target)
+        stance_df = self.load_stance_data()
         nli_df = self.load_nli_data()
         data_df = pd.concat([data_df, stance_df, nli_df])
 
@@ -92,10 +93,11 @@ class MultiData:
                                      (self.data['is_train'] == False)]
         
         # get specific dataset for stance
-        self.stance_train_df = self.stance_train_df[
-            self.stance_train_df['target_orig'] == stance_target]
-        self.stance_test_df = self.stance_test_df[
-            self.stance_test_df['target_orig'] == stance_target]
+        if stance_target != 'all':
+            self.stance_train_df = self.stance_train_df[
+                self.stance_train_df['target_orig'] == stance_target]
+            self.stance_test_df = self.stance_test_df[
+                self.stance_test_df['target_orig'] == stance_target]
 
         # reset index
         self.stance_train_df = self.stance_train_df.reset_index(drop=True)
@@ -310,7 +312,7 @@ class SingleTaskDataset(torch.utils.data.Dataset):
         self.label = [label for label in labels]
 
     def __len__(self):
-        return len(self.data_id)
+        return len(self.label)
 
     def __getitem__(self, index):
         # get encode length
@@ -322,8 +324,14 @@ class SingleTaskDataset(torch.utils.data.Dataset):
 
         # load dependency relation
         data_id = self.data_id[index]
-        with open(f'data/dep_relation/{data_id}.pickle') as f:
-            dep_rel = pickle.load(f)
+
+        # prevent cannot load deprel file
+        if os.path.exists(f'data/dep_relation/deprel_{data_id}.pickle'):
+            with open(f'data/dep_relation/deprel_{data_id}.pickle', 'rb') as f:
+                dep_rel = pickle.load(f)
+        else:
+            print(f'deprel_{data_id}.pickle is not found')
+            dep_rel = {}
 
         # get adjacency matrix
         task_adj_matrix, shared_adj_matrix = (
@@ -349,54 +357,58 @@ class SingleTaskDataset(torch.utils.data.Dataset):
                        dep_rel: dict):
 
         # initialize adjacency matrix
-        task_matrix = np.zeros((task_total_len, task_total_len))
-        shared_matrix = np.zeros((shared_total_len, shared_total_len))
+        task_matrix = np.array([[0 for _ in range(task_total_len)] 
+                                for _ in range(task_total_len)])
+        shared_matrix = np.array([[0 for _ in range(shared_total_len)]
+                                  for _ in range(shared_total_len)])
 
         # self-connected: let diagonal elements equal to 1
         np.fill_diagonal(task_matrix, 1)
         np.fill_diagonal(shared_matrix, 1)
 
-        # iterate target's dependency relation
-        for word in dep_rel['target_dep']:
-            if word['id'] >= 1 and word['head'] >= 1:
-                # get index
-                index_a = word['id']-1
-                index_b = word['head']-1
+        # iterate relation if dep_rel is not emoty
+        if dep_rel != {}:
+            # iterate target's dependency relation
+            for word in dep_rel['target_dep']:
+                if word['id'] >= 1 and word['head'] >= 1:
+                    # get index
+                    index_a = word['id']-1
+                    index_b = word['head']-1
 
-                # add edge to "task" adjacency matrix
-                if index_a < task_target_len and (
-                index_b < task_target_len):
-                    task_matrix[index_a][index_b] = 1
-                    task_matrix[index_b][index_a] = 1
+                    # add edge to "task" adjacency matrix
+                    if index_a < task_target_len and (
+                       index_b < task_target_len):
+                        task_matrix[index_a][index_b] = 1
+                        task_matrix[index_b][index_a] = 1
 
-                # add edge to "shared" adjacency matrix
-                if index_a < shared_target_len and (
-                index_b < shared_target_len):
-                    shared_matrix[index_a][index_b] = 1
-                    shared_matrix[index_b][index_a] = 1
+                    # add edge to "shared" adjacency matrix
+                    if index_a < shared_target_len and (
+                       index_b < shared_target_len):
+                        shared_matrix[index_a][index_b] = 1
+                        shared_matrix[index_b][index_a] = 1
 
-        # iterate claim's dependency relation
-        for word in dep_rel['claim_dep']:
-            if word['id'] >= 1 and word['head'] >= 1:
-                # get "task" index
-                task_index_a = task_target_len+word['id']-1
-                task_index_b = task_target_len+word['head']-1
+            # iterate claim's dependency relation
+            for word in dep_rel['claim_dep']:
+                if word['id'] >= 1 and word['head'] >= 1:
+                    # get "task" index
+                    task_index_a = task_target_len+word['id']-1
+                    task_index_b = task_target_len+word['head']-1
 
-                # get "shared" index
-                shared_index_a = shared_target_len+word['id']-1
-                shared_index_b = shared_target_len+word['head']-1
+                    # get "shared" index
+                    shared_index_a = shared_target_len+word['id']-1
+                    shared_index_b = shared_target_len+word['head']-1
 
-                # add edge to "task" adjacency matrix
-                if task_index_a < task_total_len and (
-                   task_index_b < task_total_len):
-                    task_matrix[task_index_a][task_index_b] = 1
-                    task_matrix[task_index_b][task_index_a] = 1
+                    # add edge to "task" adjacency matrix
+                    if task_index_a < task_total_len and (
+                       task_index_b < task_total_len):
+                        task_matrix[task_index_a][task_index_b] = 1
+                        task_matrix[task_index_b][task_index_a] = 1
 
-                # add edge to "shared" adjacency matrix
-                if shared_index_a < shared_total_len and (
-                   shared_index_b < shared_total_len):
-                    shared_matrix[shared_index_a][shared_index_b] = 1
-                    shared_matrix[shared_index_b][shared_index_a] = 1
+                    # add edge to "shared" adjacency matrix
+                    if shared_index_a < shared_total_len and (
+                       shared_index_b < shared_total_len):
+                        shared_matrix[shared_index_a][shared_index_b] = 1
+                        shared_matrix[shared_index_b][shared_index_a] = 1
 
         return task_matrix.tolist(), shared_matrix.tolist()
 
@@ -406,7 +418,7 @@ class Collator:
         self.pad_token_id = pad_token_id
 
     def __call__(self, batch):
-        task_id = [data[1] for data in batch]
+        task_id = batch[0][1]
         target_name = [data[2] for data in batch]
         task_target = [torch.LongTensor(data[3]) for data in batch]
         shared_target = [torch.LongTensor(data[4]) for data in batch]
