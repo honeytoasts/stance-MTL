@@ -92,19 +92,35 @@ class BaseTokenizer:
             self.tokenize(sentences, task_ids))
 
         # get max length of sentence
-        max_sent_len = max([len(sent) for sent in sentences])
+        max_stance_len = max([len(sent) for sent, task in zip(sentences, task_ids)
+                              if task == 0])
+        max_seq_len = (self.config.max_seq_len
+                       if self.config.max_seq_len > max_stance_len
+                       else max_stance_len)
 
-        # padding
-        for i in range(len(sentences)):
-            sentence = sentences[i]
+        # cut off or padding
+        task_sentences, shared_sentences = [], []
+        for task_sent, shared_sent, task_id in zip(sentences, sentences, task_ids):
+            # cutoff sentence
+            task_sent = task_sent[:max_seq_len]
+            shared_sent = shared_sent[:max_seq_len]
 
-            # padding
-            pad_count = max_sent_len - len(sentence)
-            sentence.extend([self.pad_token_id] * pad_count)
+            # padding for each task sentence
+            if task_id == 0:  # stance
+                task_pad_count = max_stance_len - len(task_sent)
+            elif task_id == 1:  # NLI
+                task_pad_count = max_seq_len - len(task_sent)
 
-            sentences[i] = sentence
+            task_sent.extend([self.pad_token_id] * task_pad_count)
 
-        return sentences
+            # padding for shared sentence
+            shared_pad_count = max_seq_len - len(shared_sent)
+            shared_sent.extend([self.pad_token_id] * shared_pad_count)
+
+            task_sentences.append(task_sent)
+            shared_sentences.append(shared_sent)
+
+        return task_sentences, shared_sentences
 
     def decode(self, sentences):
         sentences = self.detokenize(self.convert_ids_to_tokens(sentences))
