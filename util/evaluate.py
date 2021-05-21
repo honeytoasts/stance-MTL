@@ -29,10 +29,6 @@ def evaluate_function(device: torch.device,
          task_adj_matrix, shared_adj_matrix,
          label) in batch_iterator:
 
-        # check whether the stance data or not
-        if not evaluate_nli and task_id == 1:
-            continue
-
         # specify device for data
         task_target = task_target.to(device)
         shared_target = shared_target.to(device)

@@ -1,6 +1,7 @@
 # built-in module
 import os
 import random
+from util import evaluate
 
 # 3rd-party module
 import numpy as np
@@ -124,6 +125,20 @@ def main():
         shared_attn_mask=nli_valid_df['shared_attn_mask'],
         labels=nli_valid_df['label_encode'])
 
+    # single-task dataloader
+    collate_fn = util.data.Collator(tokenizer.pad_token_id)
+
+    stance_train_dataloader = DataLoader(
+        dataset=stance_train_dataset,
+        batch_size=config.batch_size,
+        shuffle=False,
+        collate_fn=collate_fn)
+    stance_valid_dataloader = DataLoader(
+        dataset=stance_valid_dataset,
+        batch_size=config.batch_size,
+        shuffle=False,
+        collate_fn=collate_fn)
+
     # multi-task dataset
     train_dataset = util.data.MultiTaskDataset(
         [stance_train_dataset, nli_train_dataset])
@@ -140,7 +155,7 @@ def main():
         batch_size=config.batch_size,
         random_seed=config.random_seed)
 
-    # multi-task dataLoader
+    # multi-task dataloader
     collate_fn = util.data.Collator(tokenizer.pad_token_id)
 
     train_dataloader = DataLoader(
@@ -160,7 +175,7 @@ def main():
     embedding.save(f'{save_path}/embedding.pickle')
 
     # initialize tensorboard
-    writer = SummaryWriter(f'tensorboard/exp-{config.experiment_no}')
+    writer = SummaryWriter(f'tensorboard/{config.experiment_no}')
 
     # construct model
     if config.model == 'task-specific-shared':
@@ -243,8 +258,13 @@ def main():
                 scheduler.step()
 
         # evaluate model
-        train_iterator = tqdm(train_dataloader, total=len(train_dataloader),
-                              desc='evaluate training data', position=0)
+        train_iterator = (
+            tqdm(train_dataloader, total=len(train_dataloader),
+                 desc='evaluate training data', position=0)
+            if config.evaluate_nli else
+            tqdm(stance_train_dataloader, total=len(stance_train_dataloader),
+                 desc='evaluate training data', position=0))
+
         (train_total_loss, train_stance_loss, train_nli_loss,
          train_target_f1, train_macro_f1, train_micro_f1,
          train_nli_acc) = (
@@ -252,10 +272,15 @@ def main():
                                             model=model,
                                             config=config,
                                             batch_iterator=train_iterator,
-                                            evaluate_nli=False))
+                                            evaluate_nli=config.evaluate_nli))
 
-        valid_iterator = tqdm(valid_dataloader, total=len(valid_dataloader),
-                              desc='evaluate validation data', position=0)
+        valid_iterator = (
+            tqdm(valid_dataloader, total=len(valid_dataloader),
+                 desc='evaluate validation data', position=0)
+            if config.evaluate_nli else
+            tqdm(stance_valid_dataloader, total=len(stance_valid_dataloader),
+                 desc='evaluate validation data', position=0))
+
         (valid_total_loss, valid_stance_loss, valid_nli_loss,
          valid_target_f1, valid_macro_f1, valid_micro_f1,
          valid_nli_acc) = (
@@ -263,7 +288,7 @@ def main():
                                             model=model,
                                             config=config,
                                             batch_iterator=valid_iterator,
-                                            evaluate_nli=False))
+                                            evaluate_nli=config.evaluate_nli))
 
         # print loss and score
         print(f'train total loss : {round(train_total_loss, 5)}, '

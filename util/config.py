@@ -17,6 +17,11 @@ class BaseConfig:
                             default='1',
                             type=str)
 
+        # evaluate setting
+        parser.add_argument('--evaluate_nli',
+                            default=0,
+                            type=int)
+
         # model type
         parser.add_argument('--model',
                             default='task-specific-shared',

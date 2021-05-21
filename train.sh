@@ -3,6 +3,7 @@
 
 python train.py \
     --experiment_no 1 \
+    --evaluate_nli 0 \
     --model task-specific-shared \
     --max_seq_len 40 \
     --embedding wikipedia \
