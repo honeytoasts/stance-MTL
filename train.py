@@ -1,7 +1,6 @@
 # built-in module
 import os
 import random
-from util import evaluate
 
 # 3rd-party module
 import numpy as np
