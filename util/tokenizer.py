@@ -6,7 +6,6 @@ from nltk import tokenize
 
 # 3rd-party module
 from tqdm import tqdm
-import pandas as pd
 
 class BaseTokenizer:
     def __init__(self, config):

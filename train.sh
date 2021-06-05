@@ -5,9 +5,9 @@ python train.py \
     --experiment_no 1 \
     --evaluate_nli 0 \
     --model task-specific-shared \
-    --max_seq_len 40 \
+    --max_seq_len 20 \
     --embedding wikipedia \
-    --nli_dataset_size 1.0 \
+    --nli_dataset_size 0.1 \
     --stance_output_dim 3 \
     --nli_output_dim 3 \
     --embedding_dim 300 \
@@ -31,8 +31,8 @@ python train.py \
     --gcn_dropout 0.3 \
     --linear_dropout 0.5 \
     --nli_loss_weight 1.0 \
-    --learning_rate 1e-4 \
-    --weight_decay 1e-4 \
+    --learning_rate 5e-5 \
+    --weight_decay 0 \
     --clip_grad_value 1.0 \
     --lr_decay_step 10 \
     --lr_decay 1 \

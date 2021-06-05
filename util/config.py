@@ -37,7 +37,7 @@ class BaseConfig:
                             default='wikipedia',
                             type=str)
         parser.add_argument('--nli_dataset_size',
-                            default=1.0,
+                            default=0.1,
                             type=float)
         parser.add_argument('--stance_output_dim',
                             default=3,

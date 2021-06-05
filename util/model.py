@@ -244,7 +244,7 @@ class StanceAttn(torch.nn.Module):
             weight = F.cosine_similarity(target_last_ht, claim_ht, dim=2)  # (B, S)
 
         # attention mask
-        weight.masked_fill(batch_mask == 0, -1e9)
+        weight.masked_fill_(batch_mask == 0, -1e9)
 
         # get attention softmax weight
         soft_weight = F.softmax(weight, dim=1)  # (B, S)
@@ -374,7 +374,7 @@ class StanceGCNLayer(torch.nn.Module):
             corr_score = F.cosine_similarity(node_hi, node_hj, dim=3)  # (B, S, S)
 
         # mask for nodes are not connected
-        corr_score.masked_fill(batch_adj == 0, -1e9)
+        corr_score.masked_fill_(batch_adj == 0, -1e9)
 
         # get softmax score
         corr_score = F.softmax(corr_score, dim=2)  # (B, S, S)

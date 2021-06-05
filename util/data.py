@@ -11,9 +11,9 @@ import pandas as pd
 from tqdm import tqdm
 import torch
 import pickle
+from sklearn.model_selection import train_test_split
 
 # self-made module
-from . import config
 from . import tokenizer
 from . import embedding
 
@@ -98,6 +98,16 @@ class MultiData:
                 self.stance_train_df['target_orig'] == stance_target]
             self.stance_test_df = self.stance_test_df[
                 self.stance_test_df['target_orig'] == stance_target]
+
+        # get specific dataset for NLI
+        self.nli_train_df = self.nli_train_df.reset_index(drop=True)
+        if float(config.nli_dataset_size) != 1.0:
+            self.nli_train_df, _ = (
+                train_test_split(self.nli_train_df,
+                                 train_size=float(config.nli_dataset_size),
+                                 random_state=config.random_seed,
+                                 shuffle=True,
+                                 stratify=self.nli_train_df['label_encode']))
 
         # reset index
         self.stance_train_df = self.stance_train_df.reset_index(drop=True)
@@ -206,7 +216,7 @@ class MultiData:
         task_attn_mask = (task_claim_ids != pad_token_id)
         shared_attn_mask = (shared_claim_ids != pad_token_id)
 
-        return task_attn_mask.tolist(), shared_attn_mask
+        return task_attn_mask.tolist(), shared_attn_mask.tolist()
 
 class MultiTaskBatchSampler(torch.utils.data.BatchSampler):
     # reference: https://github.com/namisan/mt-dnn/blob/master/mt_dnn/batcher.py

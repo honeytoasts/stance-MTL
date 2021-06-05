@@ -24,7 +24,7 @@ def main():
     config = config_cls.config
 
     # define save path
-    save_path = f'model/{config.experiment_no}'
+    save_path = f'data/model/{config.experiment_no}'
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     else:
@@ -71,11 +71,15 @@ def main():
     stance_train_df, stance_valid_df = (
         train_test_split(stance_data_df,
                          test_size=float(config.test_size),
-                         random_state=config.random_seed))
+                         random_state=config.random_seed,
+                         shuffle=True,
+                         stratify=stance_data_df['label_encode']))
     nli_train_df, nli_valid_df = (
         train_test_split(nli_data_df,
-                        test_size=float(config.test_size),
-                        random_state=config.random_seed))
+                         test_size=float(config.test_size),
+                         random_state=config.random_seed,
+                         shuffle=True,
+                         stratify=nli_data_df['label_encode']))
 
     # single-task dataset
     stance_train_dataset = util.data.SingleTaskDataset(
@@ -174,7 +178,7 @@ def main():
     embedding.save(f'{save_path}/embedding.pickle')
 
     # initialize tensorboard
-    writer = SummaryWriter(f'tensorboard/{config.experiment_no}')
+    writer = SummaryWriter(f'data/tensorboard/{config.experiment_no}')
 
     # construct model
     if config.model == 'task-specific-shared':

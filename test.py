@@ -30,7 +30,7 @@ def get_config():
 
 def test(experiment_no, epoch, evaluate_nli):
     # define model path
-    model_path = f'model/{experiment_no}'
+    model_path = f'data/model/{experiment_no}'
 
     # initialize device
     device = torch.device('cpu')
@@ -39,7 +39,7 @@ def test(experiment_no, epoch, evaluate_nli):
 
     # load config
     config_cls = util.config.BaseConfig()
-    config_cls.load(file_path=f'model/{experiment_no}/config.json')
+    config_cls.load(file_path=f'{model_path}/config.json')
     config = config_cls.config
 
     # load tokenizer
@@ -65,11 +65,15 @@ def test(experiment_no, epoch, evaluate_nli):
     stance_train_df, stance_valid_df = (
         train_test_split(stance_data_df,
                          test_size=float(config.test_size),
-                         random_state=config.random_seed))
+                         random_state=config.random_seed,
+                         shuffle=True,
+                         stratify=stance_data_df['label_encode']))
     nli_train_df, nli_valid_df = (
         train_test_split(nli_data_df,
-                        test_size=float(config.test_size),
-                        random_state=config.random_seed))
+                         test_size=float(config.test_size),
+                         random_state=config.random_seed,
+                         shuffle=True,
+                         stratify=nli_data_df['label_encode']))
 
     # single-task dataset
     stance_train_dataset = util.data.SingleTaskDataset(
