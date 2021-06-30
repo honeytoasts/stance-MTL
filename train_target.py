@@ -17,14 +17,14 @@ import util
 # prevent warning
 pd.options.mode.chained_assignment = None
 
-def main():
+def train(target='all', abbr_target=None):
     # get config
     config_cls = util.config.BaseConfig()
     config_cls.get_config()
     config = config_cls.config
 
     # define save path
-    save_path = f'data/model/{config.experiment_no}'
+    save_path = f'data/model/{config.experiment_no}/{abbr_target}'
     if not os.path.exists(save_path):
         os.makedirs(save_path)
     else:
@@ -61,7 +61,7 @@ def main():
 
     # load data
     data = util.data.MultiData(training=True,
-                               stance_target='all',
+                               stance_target=target,
                                config=config,
                                tokenizer=tokenizer,
                                embedding=embedding)
@@ -178,7 +178,7 @@ def main():
     embedding.save(f'{save_path}/embedding.pickle')
 
     # initialize tensorboard
-    writer = SummaryWriter(f'data/tensorboard/{config.experiment_no}')
+    writer = SummaryWriter(f'data/tensorboard/{config.experiment_no}/{abbr_target}')
 
     # construct model
     if config.model == 'task-specific-shared':
@@ -358,6 +358,18 @@ def main():
 
     # release GPU memory
     torch.cuda.empty_cache()
+
+    return
+
+def main():
+    targets = ['Atheism', 'Climate Change is a Real Concern',
+               'Feminist Movement', 'Hillary Clinton',
+               'Legalization of Abortion']
+    abbr_targets = ['atheism', 'climate', 'feminism', 'hillary', 'abortion']
+
+    for target, abbr_target in zip(targets, abbr_targets):
+        print(f'train model for {abbr_target}')
+        train(target, abbr_target)
 
     return
 

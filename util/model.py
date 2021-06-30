@@ -4,6 +4,117 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+class SharedModel(torch.nn.Module):
+    def __init__(self,
+                 config: argparse.Namespace,
+                 num_embeddings: int,
+                 padding_idx: int,
+                 embedding_weight=None):
+        super(SharedModel, self).__init__()
+
+        # config
+        self.config = config
+
+        # dropout layer
+        self.rnn_dropout = nn.Dropout(config.rnn_dropout)
+        self.gcn_dropout = nn.Dropout(config.gcn_dropout)
+
+        # embedding layer
+        self.embedding_layer = (
+            nn.Embedding(num_embeddings=num_embeddings,
+                         embedding_dim=config.embedding_dim,
+                         padding_idx=padding_idx))
+        if embedding_weight is not None:
+            self.embedding_layer.weight = nn.Parameter(embedding_weight)
+
+        # Attn layer
+        self.shared_Attn = StanceAttn(config=config,
+                                      hidden_dim=config.shared_hidden_dim,
+                                      num_layers=config.num_shared_rnn)
+
+        # GCN layer
+        self.shared_GCN = StanceGCN(config=config,
+                                    hidden_dim=2*config.shared_hidden_dim,
+                                    num_layers=config.num_shared_gcn)
+
+        # Linear layer
+        stance_input_dim = config.shared_hidden_dim*2
+        nli_input_dim = config.shared_hidden_dim*4
+
+        self.stance_linear = (
+            StanceSharedLinear(config=config,
+                               input_dim=stance_input_dim,
+                               hidden_dim=config.stance_linear_dim,
+                               output_dim=config.stance_output_dim,
+                               num_layers=config.num_stance_linear))
+        self.nli_linear = (
+            NliSharedLinear(config=config,
+                            input_dim=nli_input_dim,
+                            hidden_dim=config.nli_linear_dim,
+                            output_dim=config.nli_output_dim,
+                            num_layers=config.num_nli_linear))
+
+    def forward(self,
+                task_id: int,
+                task_target,
+                shared_target,
+                task_claim,
+                shared_claim,
+                task_mask,
+                shared_mask,
+                task_adj,
+                shared_adj):
+
+        # embedding
+        shared_target = self.embedding_layer(shared_target)
+        shared_claim = self.embedding_layer(shared_claim)
+
+        # dropout
+        shared_target = self.rnn_dropout(shared_target)
+        shared_claim = self.rnn_dropout(shared_claim)
+
+        # Attn
+        shared_target, shared_claim, shared_weight = (
+            self.shared_Attn(shared_target, shared_claim, shared_mask))
+
+        # dropout
+        shared_target = self.rnn_dropout(shared_target)
+        shared_claim = self.rnn_dropout(shared_claim)
+
+        # get target and claim sequence length
+        shared_target_len = shared_target.shape[1]
+        shared_claim_len = shared_claim.shape[1]
+
+        # add edge to adjacency matrix between the target and claim
+        # with attention weight larger than threshold
+        shared_adj_edge = (shared_weight >= self.config.attention_threshold)  # (B, S)
+        shared_adj_edge = shared_adj_edge.repeat(1, shared_target_len).reshape(
+            -1, shared_target_len, shared_claim_len)  # (B, S, S)
+
+        shared_adj[:, :shared_target_len, shared_target_len:] = shared_adj_edge
+        shared_adj[:, shared_target_len:, :shared_target_len] = (
+            shared_adj_edge.transpose(1, 2))
+
+        # GCN
+        shared_target, shared_claim, shared_node_rep, shared_corr_score = (
+            self.shared_GCN(shared_target, shared_claim, shared_adj))
+
+        # dropout
+        shared_target = self.gcn_dropout(shared_target)
+        shared_claim = self.gcn_dropout(shared_claim)
+
+        # linear layer
+        final_rep = (
+            self.stance_linear(shared_claim, shared_weight)
+            if task_id == 0 else
+            self.nli_linear(shared_target, shared_claim, shared_weight))
+
+        return (final_rep, 
+                (shared_weight,
+                 shared_node_rep,
+                 shared_corr_score))
+        
+
 class TaskSpecificSharedModel(torch.nn.Module):
     def __init__(self,
                  config: argparse.Namespace,
@@ -87,10 +198,10 @@ class TaskSpecificSharedModel(torch.nn.Module):
         shared_claim = self.embedding_layer(shared_claim)
 
         # dropout
-        # task_target = self.rnn_dropout(task_target)
+        task_target = self.rnn_dropout(task_target)
         shared_target = self.rnn_dropout(shared_target)
 
-        # task_claim = self.rnn_dropout(task_claim)
+        task_claim = self.rnn_dropout(task_claim)
         shared_claim = self.rnn_dropout(shared_claim)
 
         # StanceAttn
@@ -472,6 +583,83 @@ class NliLinear(torch.nn.Module):
 
         # dropout
         final_rep = self.linear_dropout(final_rep)
+
+        # linear layer
+        final_rep = self.linear(final_rep)
+
+        return final_rep
+
+class StanceSharedLinear(torch.nn.Module):
+    def __init__(self,
+                 config: argparse.Namespace,
+                 input_dim: int,
+                 hidden_dim: int,
+                 output_dim: int,
+                 num_layers: int):
+        super(StanceSharedLinear, self).__init__()
+
+        # config
+        self.config = config
+
+        # linear dropout
+        self.linear_dropout = nn.Dropout(p=config.linear_dropout)
+
+        # linear layer
+        self.linear = nn.Linear(in_features=input_dim,
+                                out_features=output_dim)
+
+    def forward(self,
+                batch_claim,
+                batch_weight):
+
+        # get linear combination vector of claim
+        r = torch.matmul(batch_weight.unsqueeze(1),
+                         batch_claim).squeeze(1)  # (B, H)
+
+        # dropout
+        final_rep = self.linear_dropout(r)
+
+        # linear layer
+        final_rep = self.linear(final_rep)
+
+        return final_rep
+
+class NliSharedLinear(torch.nn.Module):
+    def __init__(self,
+                 config: argparse.Namespace,
+                 input_dim: int,
+                 hidden_dim: int,
+                 output_dim: int,
+                 num_layers: int):
+        super(NliSharedLinear, self).__init__()
+
+        # config
+        self.config = config
+
+        # linear dropout
+        self.linear_dropout = nn.Dropout(p=config.linear_dropout)
+
+        # linear layer
+        self.linear = nn.Linear(in_features=input_dim,
+                                out_features=output_dim)
+
+    def forward(self,
+                batch_target,
+                batch_claim,
+                batch_weight):
+
+        # get average vector of target
+        batch_target = torch.mean(batch_target, dim=1)
+
+        # get linear combination vector of claim
+        batch_claim = torch.matmul(batch_weight.unsqueeze(1),
+                                   batch_claim).squeeze(1)  # (B, H)
+        
+        # get final representation of target and claim
+        r = torch.cat([batch_target, batch_claim], dim=1)
+
+        # dropout
+        final_rep = self.linear_dropout(r)
 
         # linear layer
         final_rep = self.linear(final_rep)

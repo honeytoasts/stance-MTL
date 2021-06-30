@@ -208,6 +208,12 @@ def test(experiment_no, epoch, evaluate_nli):
             num_embeddings=embedding.get_num_embeddings(),
             padding_idx=tokenizer.pad_token_id,
             embedding_weight=embedding.vector)
+    elif config.model == 'shared':
+        model = util.model.SharedModel(
+            config=config,
+            num_embeddings=embedding.get_num_embeddings(),
+            padding_idx=tokenizer.pad_token_id,
+            embedding_weight=embedding.vector)
     else: 
         raise ValueError(f'model {config.model} is not exist')
 
